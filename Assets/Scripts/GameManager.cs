@@ -1,6 +1,6 @@
 using UnityEngine;
-using UnityEngine.SceneManagement; 
-using System.IO; 
+using UnityEngine.SceneManagement;
+using System.IO;
 using System.Collections;
 using System.Collections.Generic;
 using System;
@@ -11,7 +11,7 @@ public class Sector
     public string sectorName = "Sector A";
     public string sectorAnnouncementText = "SECURE ALL OBJECTIVES";
     public CapturePoint[] capturePoints;
-    
+
     [Header("Base Allocations")]
     public BaseZone attackerBase;
     public BaseZone defenderBase;
@@ -28,14 +28,20 @@ public class GameManager : MonoBehaviour
 
     [Header("Automated Testing")]
     public bool enableAutoTestMode = false;
+
+    [Tooltip("Simulation speed used while automated testing is active.")]
     public float testTimeMultiplier = 20f;
+
+    [Tooltip("Number of matches to run before the automated batch stops. Minimum 1.")]
+    [Min(1)] public int autoTestMatchCount = 20;
+
     private string logFilePath;
 
     [Header("Telemetry Data")]
     public int attackerDeaths = 0;
     public int defenderDeaths = 0;
-    public float attackerTotalLifespan = 0f; 
-    public float defenderTotalLifespan = 0f; 
+    public float attackerTotalLifespan = 0f;
+    public float defenderTotalLifespan = 0f;
     private float matchStartTime;
 
     [Header("Faction & AI Director")]
@@ -44,9 +50,9 @@ public class GameManager : MonoBehaviour
 
     [Header("Match Settings")]
     public int attackerTickets = 150;
-    public int defenderTickets = 100; 
-    public float sectorTransitionDelay = 12f; 
-    public int sectorCaptureTicketBonus = 30; 
+    public int defenderTickets = 100;
+    public float sectorTransitionDelay = 12f;
+    public int sectorCaptureTicketBonus = 30;
     public float sectorHoldRequiredDuration = 1.5f;
     private float sectorHoldTimer = 0f;
     public Sector[] sectors;
@@ -54,20 +60,20 @@ public class GameManager : MonoBehaviour
 
     [Header("Player Stats")]
     public int commandXP = 0;
-    public int attackerXP = 0; 
+    public int attackerXP = 0;
     public int defenderXP = 0;
 
     [Header("Spawners")]
     public UnitSpawner attackerSpawner;
-    public UnitSpawner defenderSpawner; 
+    public UnitSpawner defenderSpawner;
 
     [Header("UI Panels & Directors")]
-    public GameObject factionSelectionUI; 
-    public GameObject playerGameplayUI;   
-    public EnemyDirector enemyDirector;   
+    public GameObject factionSelectionUI;
+    public GameObject playerGameplayUI;
+    public EnemyDirector enemyDirector;
 
     [Header("Rocket League Perspective Flip")]
-    public Transform battlefieldParent; 
+    public Transform battlefieldParent;
 
     private bool isGameOver = false;
     public bool isTransitioningSector = false;
@@ -80,30 +86,35 @@ public class GameManager : MonoBehaviour
             return;
         }
         Instance = this;
-        
-        logFilePath = Application.dataPath + "/MatchBalanceLogs.csv";
 
+        logFilePath = Application.dataPath + "/MatchBalanceLogs.csv";
         currentSectorIndex = 0;
 
-        if (TestDashboardOverlay.CurrentMatchNumber > 1) 
+        if (TestDashboardOverlay.CurrentMatchNumber > 1)
         {
-            enableAutoTestMode = true; 
+            enableAutoTestMode = true;
             StartCoroutine(StartAutoTest());
         }
-        else if (enableAutoTestMode) 
+        else if (enableAutoTestMode)
         {
+            PrepareNewAutoTestBatch();
             StartCoroutine(StartAutoTest());
         }
-        else 
-        {
-            // Time.timeScale = 0f;
-        }
+    }
+
+    private void PrepareNewAutoTestBatch()
+    {
+        TestDashboardOverlay.ResetBatchStats();
+        TestDashboardOverlay.TargetMatchCount = Mathf.Max(1, autoTestMatchCount);
+        TestDashboardOverlay.CurrentMatchNumber = 1;
+
+        Debug.Log($"AUTO TEST: Starting batch of {TestDashboardOverlay.TargetMatchCount} matches at {testTimeMultiplier:0.#}x speed.");
     }
 
     private IEnumerator StartAutoTest()
     {
         yield return new WaitForSecondsRealtime(0.5f);
-        matchStartTime = Time.time; 
+        matchStartTime = Time.time;
         SelectDefenderFaction();
         Time.timeScale = testTimeMultiplier;
     }
@@ -111,8 +122,7 @@ public class GameManager : MonoBehaviour
     public void StartAutoTestFromMenu()
     {
         enableAutoTestMode = true;
-        TestDashboardOverlay.ResetBatchStats();
-        TestDashboardOverlay.CurrentMatchNumber = 1;
+        PrepareNewAutoTestBatch();
         SelectDefenderFaction();
         matchStartTime = Time.time;
         Time.timeScale = testTimeMultiplier;
@@ -189,7 +199,7 @@ public class GameManager : MonoBehaviour
         if (factionSelectionUI != null) factionSelectionUI.SetActive(false);
         if (playerGameplayUI != null) playerGameplayUI.SetActive(true);
         matchStartTime = Time.time;
-        Time.timeScale = enableAutoTestMode ? testTimeMultiplier : 1f; 
+        Time.timeScale = enableAutoTestMode ? testTimeMultiplier : 1f;
     }
 
     private void CheckSectorProgression()
@@ -220,7 +230,7 @@ public class GameManager : MonoBehaviour
                 {
                     Debug.LogError($"🚨 CRITICAL INSPECTOR ERROR: CapturePoint at Index {i} in '{currentSector.sectorName}' is MISSING or NULL! The game cannot progress properly!");
                     sectorHoldTimer = 0f;
-                    return; 
+                    return;
                 }
 
                 cp.activeDuringSectorIndex = currentSectorIndex;
@@ -235,7 +245,7 @@ public class GameManager : MonoBehaviour
             if (verifiedCapturedPoints < totalPoints)
             {
                 sectorHoldTimer = 0f;
-                return; 
+                return;
             }
 
             sectorHoldTimer += Time.deltaTime;
@@ -297,7 +307,7 @@ public class GameManager : MonoBehaviour
         {
             Transform retreatPoint = sectors[currentSectorIndex + 1].defenderBase.spawnPoint;
             if (retreatPoint == null) retreatPoint = sectors[currentSectorIndex + 1].defenderBase.transform;
-            
+
             GameObject[] defenders = GameObject.FindGameObjectsWithTag("Defender");
             foreach (GameObject def in defenders)
             {
@@ -311,7 +321,7 @@ public class GameManager : MonoBehaviour
         {
             foreach (CapturePoint cp in completedSector.capturePoints)
             {
-                if (cp != null) cp.LockCapturePoint(); 
+                if (cp != null) cp.LockCapturePoint();
             }
         }
 
@@ -333,12 +343,12 @@ public class GameManager : MonoBehaviour
         if (UIManager.Instance != null) UIManager.Instance.UpdateTickets(attackerTickets);
 
         Sector activeSector = sectors[currentSectorIndex];
-        
+
         if (activeSector.capturePoints != null)
         {
             foreach (CapturePoint cp in activeSector.capturePoints)
             {
-                if (cp != null) 
+                if (cp != null)
                 {
                     cp.activeDuringSectorIndex = currentSectorIndex;
                     cp.ResetCapturePoint();
@@ -355,7 +365,7 @@ public class GameManager : MonoBehaviour
         {
             Transform defSpawn = activeSector.defenderBase.spawnPoint != null ? activeSector.defenderBase.spawnPoint : activeSector.defenderBase.transform;
             defenderSpawner.transform.position = defSpawn.position;
-            
+
             defenderSpawner.SpawnWave(defenderSpawner.initialSpawnCount);
         }
 
@@ -376,11 +386,11 @@ public class GameManager : MonoBehaviour
     {
         if (attackerTickets <= 0) TriggerGameOver("Defenders");
     }
-    
+
     private void TriggerGameOver(string winner)
     {
         isGameOver = true;
-        
+
         if (UIManager.Instance != null) UIManager.Instance.ShowGameOver($"{winner.ToUpper()} WIN!");
 
         if (enableAutoTestMode)
@@ -389,7 +399,8 @@ public class GameManager : MonoBehaviour
             LogMatchData(winner);
             TestDashboardOverlay.RecordMatchCompleted(winner, duration);
 
-            bool shouldContinueBatch = true; 
+            int targetMatches = Mathf.Max(1, TestDashboardOverlay.TargetMatchCount);
+            bool shouldContinueBatch = TestDashboardOverlay.CurrentMatchNumber < targetMatches;
 
             if (shouldContinueBatch)
             {
@@ -398,11 +409,30 @@ public class GameManager : MonoBehaviour
             }
             else
             {
-                Debug.Log($"🏁 BATCH TEST RUN COMPLETED! Total Matches: {TestDashboardOverlay.CurrentMatchNumber}. Final Score: Attackers {TestDashboardOverlay.TotalAttackerWins} - Defenders {TestDashboardOverlay.TotalDefenderWins}");
+                float averageDuration = 0f;
+                if (TestDashboardOverlay.MatchDurations.Count > 0)
+                {
+                    foreach (float matchDuration in TestDashboardOverlay.MatchDurations)
+                    {
+                        averageDuration += matchDuration;
+                    }
+                    averageDuration /= TestDashboardOverlay.MatchDurations.Count;
+                }
+
+                int finishedMatches = TestDashboardOverlay.TotalAttackerWins + TestDashboardOverlay.TotalDefenderWins;
+                float attackerWinRate = finishedMatches > 0
+                    ? (float)TestDashboardOverlay.TotalAttackerWins / finishedMatches * 100f
+                    : 0f;
+
+                Debug.Log(
+                    $"🏁 BATCH TEST COMPLETED! Matches: {finishedMatches} | " +
+                    $"Attackers {TestDashboardOverlay.TotalAttackerWins} ({attackerWinRate:F1}%) - " +
+                    $"Defenders {TestDashboardOverlay.TotalDefenderWins} | Avg duration {averageDuration:F1}s");
+
                 Time.timeScale = 0f;
             }
         }
-        else 
+        else
         {
             Time.timeScale = 0f;
         }
@@ -411,38 +441,38 @@ public class GameManager : MonoBehaviour
     private void LogMatchData(string winner)
     {
         bool isNewFile = !File.Exists(logFilePath);
-        float matchDuration = Time.time - matchStartTime; 
-        
+        float matchDuration = Time.time - matchStartTime;
+
         float avgAttackerLife = attackerDeaths > 0 ? attackerTotalLifespan / attackerDeaths : 0f;
         float avgDefenderLife = defenderDeaths > 0 ? defenderTotalLifespan / defenderDeaths : 0f;
-        
+
         using (StreamWriter writer = new StreamWriter(logFilePath, true))
         {
-            if (isNewFile) 
+            if (isNewFile)
             {
                 writer.WriteLine("Winner,Match Time (s),Attacker Tickets,Defender Tickets,Atk Deaths,Def Deaths,Avg Atk Lifespan (s),Avg Def Lifespan (s)");
             }
-            
+
             writer.WriteLine($"{winner},{matchDuration:F1},{Mathf.Max(0, attackerTickets)},{Mathf.Max(0, defenderTickets)},{attackerDeaths},{defenderDeaths},{avgAttackerLife:F1},{avgDefenderLife:F1}");
         }
-        
+
         Debug.Log($"📊 LOGGED: {winner} Won | Time: {matchDuration:F1}s | Avg Atk Life: {avgAttackerLife:F1}s | Avg Def Lifespan: {avgDefenderLife:F1}s");
     }
 
-    public void AddXP(int amount) 
-    { 
-        commandXP += amount; 
-        attackerXP += amount; 
+    public void AddXP(int amount)
+    {
+        commandXP += amount;
+        attackerXP += amount;
     }
-    
-    public void AddXP(int amount, string team) 
-    { 
-        if (team == "Attacker") 
+
+    public void AddXP(int amount, string team)
+    {
+        if (team == "Attacker")
         {
-            commandXP += amount; 
+            commandXP += amount;
             attackerXP += amount;
         }
-        else if (team == "Defender") 
+        else if (team == "Defender")
         {
             defenderXP += amount;
         }
