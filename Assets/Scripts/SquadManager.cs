@@ -34,7 +34,7 @@ public sealed class SquadManager : MonoBehaviour
     {
         if (Instance != null) return Instance;
 
-        SquadManager existing = FindFirstObjectByType<SquadManager>(FindObjectsInactive.Include);
+        SquadManager existing = FindAnyObjectByType<SquadManager>(FindObjectsInactive.Include);
         if (existing != null)
         {
             Instance = existing;
@@ -77,8 +77,24 @@ public sealed class SquadManager : MonoBehaviour
         for (int i = 0; i < count; i++)
         {
             string name = i < DefaultSquadNames.Length ? DefaultSquadNames[i] : $"Squad {i + 1}";
-            target.Add(new Squad($"{idPrefix}-{i + 1}", name, faction));
+            SquadRole role = GetDefaultRole(faction, i);
+            target.Add(new Squad($"{idPrefix}-{i + 1}", name, faction, role));
         }
+    }
+
+    private SquadRole GetDefaultRole(Faction faction, int squadIndex)
+    {
+        if (squadIndex == 2)
+        {
+            return SquadRole.Support;
+        }
+
+        if (squadIndex == 3)
+        {
+            return SquadRole.Reserve;
+        }
+
+        return faction == Faction.Defender ? SquadRole.Defend : SquadRole.Attack;
     }
 
     public Squad RegisterAssaultUnit(GameObject unit)
@@ -126,7 +142,7 @@ public sealed class SquadManager : MonoBehaviour
 
         squadMember.Assign(targetSquad);
 
-        Debug.Log($"SquadManager: {unit.name} assigned to {faction} {targetSquad.DisplayName} ({targetSquad.MemberCount}/{squadCapacity}).");
+        Debug.Log($"SquadManager: {unit.name} assigned to {faction} {targetSquad.DisplayName} [{targetSquad.Role}] ({targetSquad.MemberCount}/{squadCapacity}).");
         return targetSquad;
     }
 
@@ -156,6 +172,20 @@ public sealed class SquadManager : MonoBehaviour
 
         SquadMember member = unit.GetComponent<SquadMember>();
         return member != null ? member.Squad : null;
+    }
+
+    public void ClearStrategicObjectives()
+    {
+        ClearStrategicObjectives(attackerSquads);
+        ClearStrategicObjectives(defenderSquads);
+    }
+
+    private void ClearStrategicObjectives(List<Squad> squads)
+    {
+        foreach (Squad squad in squads)
+        {
+            squad.ClearStrategicObjective();
+        }
     }
 
     private Faction GetFaction(GameObject unit)

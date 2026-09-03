@@ -10,9 +10,9 @@ public sealed class SquadMember : MonoBehaviour
     [Header("Squad Indicator")]
     [SerializeField] private bool showSquadIndicator = true;
     [SerializeField] private float indicatorHeight = 2.7f;
-    [SerializeField] private float indicatorScale = 0.42f;
-    [SerializeField] private float normalFontSize = 7f;
-    [SerializeField] private float selectedFontSize = 8.5f;
+    [SerializeField] private float indicatorScale = 0.504f;
+    [SerializeField] private float normalFontSize = 8.4f;
+    [SerializeField] private float selectedFontSize = 10.2f;
 
     private TextMeshPro indicatorText;
     private SelectableUnit selectableUnit;

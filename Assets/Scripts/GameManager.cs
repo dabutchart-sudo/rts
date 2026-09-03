@@ -426,7 +426,7 @@ public class GameManager : MonoBehaviour
             writer.WriteLine($"{winner},{matchDuration:F1},{Mathf.Max(0, attackerTickets)},{Mathf.Max(0, defenderTickets)},{attackerDeaths},{defenderDeaths},{avgAttackerLife:F1},{avgDefenderLife:F1}");
         }
         
-        Debug.Log($"📊 LOGGED: {winner} Won | Time: {matchDuration:F1}s | Avg Atk Life: {avgAttackerLife:F1}s | Avg Def Life: {avgDefenderLife:F1}s");
+        Debug.Log($"📊 LOGGED: {winner} Won | Time: {matchDuration:F1}s | Avg Atk Life: {avgAttackerLife:F1}s | Avg Def Lifespan: {avgDefenderLife:F1}s");
     }
 
     public void AddXP(int amount) 
@@ -480,9 +480,7 @@ public class GameManager : MonoBehaviour
     public Transform GetCurrentTarget(GameObject unit, bool isAttacker)
     {
         if (sectors == null || sectors.Length == 0) return null;
-
         if (isTransitioningSector) return null;
-
         if (currentSectorIndex >= sectors.Length) return null;
 
         Sector currentSector = sectors[currentSectorIndex];
@@ -497,7 +495,7 @@ public class GameManager : MonoBehaviour
         if (activePoints.Count == 0) return null;
         if (activePoints.Count == 1) return activePoints[0].transform;
 
-        int unitId = unit != null ? Mathf.Abs(unit.GetHashCode()) : 0;
+        int assignmentId = GetStrategicAssignmentId(unit);
 
         if (isAttacker)
         {
@@ -512,26 +510,26 @@ public class GameManager : MonoBehaviour
 
             if (uncapturedPoints.Count > 0 && capturedPoints.Count > 0)
             {
-                bool isAssaultSquad = (unitId % 4) != 0; 
+                bool isAssaultSquad = (assignmentId % 4) != 0;
                 if (isAssaultSquad)
                 {
-                    int idx = (unitId / 4) % uncapturedPoints.Count;
+                    int idx = (assignmentId / 4) % uncapturedPoints.Count;
                     return uncapturedPoints[idx].transform;
                 }
                 else
                 {
-                    int idx = (unitId / 4) % capturedPoints.Count;
+                    int idx = (assignmentId / 4) % capturedPoints.Count;
                     return capturedPoints[idx].transform;
                 }
             }
             else if (uncapturedPoints.Count > 0)
             {
-                int idx = unitId % uncapturedPoints.Count;
+                int idx = assignmentId % uncapturedPoints.Count;
                 return uncapturedPoints[idx].transform;
             }
             else
             {
-                int idx = unitId % activePoints.Count;
+                int idx = assignmentId % activePoints.Count;
                 return activePoints[idx].transform;
             }
         }
@@ -548,28 +546,61 @@ public class GameManager : MonoBehaviour
 
             if (threatenedPoints.Count > 0 && securePoints.Count > 0)
             {
-                bool isCounterAttackSquad = (unitId % 4) != 0;
+                bool isCounterAttackSquad = (assignmentId % 4) != 0;
                 if (isCounterAttackSquad)
                 {
-                    int idx = (unitId / 4) % threatenedPoints.Count;
+                    int idx = (assignmentId / 4) % threatenedPoints.Count;
                     return threatenedPoints[idx].transform;
                 }
                 else
                 {
-                    int idx = (unitId / 4) % securePoints.Count;
+                    int idx = (assignmentId / 4) % securePoints.Count;
                     return securePoints[idx].transform;
                 }
             }
             else if (threatenedPoints.Count > 0)
             {
-                int idx = unitId % threatenedPoints.Count;
+                int idx = assignmentId % threatenedPoints.Count;
                 return threatenedPoints[idx].transform;
             }
             else
             {
-                int idx = unitId % activePoints.Count;
+                int idx = assignmentId % activePoints.Count;
                 return activePoints[idx].transform;
             }
+        }
+    }
+
+    private int GetStrategicAssignmentId(GameObject unit)
+    {
+        if (unit == null) return 0;
+
+        SquadMember squadMember = unit.GetComponent<SquadMember>();
+        if (squadMember != null && squadMember.Squad != null)
+        {
+            string squadId = squadMember.Squad.SquadId;
+            if (!string.IsNullOrEmpty(squadId))
+            {
+                return GetStablePositiveHash(squadId);
+            }
+        }
+
+        string fallbackIdentity = $"{unit.name}:{unit.transform.GetSiblingIndex()}";
+        return GetStablePositiveHash(fallbackIdentity);
+    }
+
+    private int GetStablePositiveHash(string value)
+    {
+        unchecked
+        {
+            int hash = 17;
+            for (int i = 0; i < value.Length; i++)
+            {
+                hash = (hash * 31) + value[i];
+            }
+
+            if (hash == int.MinValue) return int.MaxValue;
+            return Mathf.Abs(hash);
         }
     }
 

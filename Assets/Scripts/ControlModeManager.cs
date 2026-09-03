@@ -25,7 +25,7 @@ public class ControlModeManager : MonoBehaviour
     {
         if (Instance != null) return;
 
-        ControlModeManager existing = FindFirstObjectByType<ControlModeManager>(FindObjectsInactive.Include);
+        ControlModeManager existing = FindAnyObjectByType<ControlModeManager>(FindObjectsInactive.Include);
         if (existing != null)
         {
             Instance = existing;
