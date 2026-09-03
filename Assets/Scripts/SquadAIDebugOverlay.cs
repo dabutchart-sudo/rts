@@ -89,6 +89,7 @@ public sealed class SquadAIDebugOverlay : MonoBehaviour
             if (squad == null) continue;
 
             text.AppendLine($"--- {squad.Faction} {squad.DisplayName} ---");
+            text.AppendLine($"Composition: {squad.GetCompositionSummary()}");
             text.AppendLine(controller != null ? controller.GetDiagnosticReport(squad) : BuildFallbackReport(squad));
             text.AppendLine();
         }
