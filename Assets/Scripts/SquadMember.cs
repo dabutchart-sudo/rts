@@ -9,15 +9,23 @@ public sealed class SquadMember : MonoBehaviour
 
     [Header("Squad Indicator")]
     [SerializeField] private bool showSquadIndicator = true;
-    [SerializeField] private float indicatorHeight = 2.2f;
-    [SerializeField] private float indicatorScale = 0.22f;
+    [SerializeField] private float indicatorHeight = 2.7f;
+    [SerializeField] private float indicatorScale = 0.42f;
+    [SerializeField] private float normalFontSize = 7f;
+    [SerializeField] private float selectedFontSize = 8.5f;
 
     private TextMeshPro indicatorText;
+    private SelectableUnit selectableUnit;
 
     public Squad Squad { get; private set; }
     public string SquadId => squadId;
     public string SquadName => squadName;
     public string SquadLetter => squadLetter;
+
+    private void Awake()
+    {
+        selectableUnit = GetComponent<SelectableUnit>();
+    }
 
     public void Assign(Squad squad)
     {
@@ -33,7 +41,14 @@ public sealed class SquadMember : MonoBehaviour
     {
         if (indicatorText == null) return;
 
-        indicatorText.gameObject.SetActive(showSquadIndicator && IsPlayerFactionUnit());
+        bool shouldShow = showSquadIndicator && IsPlayerFactionUnit();
+        indicatorText.gameObject.SetActive(shouldShow);
+
+        if (!shouldShow) return;
+
+        bool selected = selectableUnit != null && selectableUnit.isSelected;
+        indicatorText.text = selected ? $"[{squadLetter}]" : squadLetter;
+        indicatorText.fontSize = selected ? selectedFontSize : normalFontSize;
     }
 
     private void CreateOrRefreshIndicator()
@@ -66,7 +81,7 @@ public sealed class SquadMember : MonoBehaviour
 
             indicatorText = indicatorObject.AddComponent<TextMeshPro>();
             indicatorText.alignment = TextAlignmentOptions.Center;
-            indicatorText.fontSize = 6f;
+            indicatorText.fontSize = normalFontSize;
             indicatorText.fontStyle = FontStyles.Bold;
             indicatorText.color = Color.white;
             indicatorText.enableAutoSizing = false;
