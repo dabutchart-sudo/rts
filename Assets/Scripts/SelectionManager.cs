@@ -19,6 +19,9 @@ public class SelectionManager : MonoBehaviour
     [Tooltip("How many pixels the mouse must move before a click turns into a drag box.")]
     public float dragThreshold = 10f;
 
+    [Tooltip("Maximum time between two clicks on the same unit for squad selection.")]
+    public float doubleClickThreshold = 0.35f;
+
     [Header("Unit Rosters")]
     public List<SelectableUnit> allUnits = new List<SelectableUnit>();
     public List<SelectableUnit> selectedUnits = new List<SelectableUnit>();
@@ -26,6 +29,8 @@ public class SelectionManager : MonoBehaviour
     private Vector2 startMousePos;
     private bool isDragging = false;
     private readonly List<RaycastResult> uiRaycastResults = new List<RaycastResult>();
+    private SelectableUnit lastClickedUnit;
+    private float lastClickTime = -10f;
 
     void Awake()
     {
@@ -68,9 +73,6 @@ public class SelectionManager : MonoBehaviour
             return;
         }
 
-        // Only block RTS input when the pointer is over an interactive UI control
-        // such as a Button, Toggle, Slider, etc. Decorative/full-screen UI graphics
-        // must not prevent selecting units in the world.
         if (IsPointerOverInteractiveUI())
         {
             if (isDragging)
@@ -198,45 +200,93 @@ public class SelectionManager : MonoBehaviour
 
     void SelectSingleUnit()
     {
-        ClearSelection();
-
         Vector2 mousePos = Mouse.current.position.ReadValue();
         Ray ray = Camera.main.ScreenPointToRay(mousePos);
 
-        if (Physics.Raycast(ray, out RaycastHit hit))
+        if (!Physics.Raycast(ray, out RaycastHit hit))
         {
-            Debug.Log($"RAYCAST HIT: Object = {hit.collider.gameObject.name}, Tag = {hit.collider.tag}");
-
-            SelectableUnit clickedUnit = hit.collider.GetComponentInParent<SelectableUnit>();
-
-            if (clickedUnit == null)
-            {
-                Debug.LogWarning("SELECTION FAILED: No SelectableUnit script found on this object or its parent.");
-                return;
-            }
-
-            string validTag = GetValidSelectionTag();
-            Debug.Log($"FACTION CHECK: Player needs '{validTag}'. Clicked unit is '{clickedUnit.gameObject.tag}'.");
-
-            if (clickedUnit.gameObject.CompareTag(validTag))
-            {
-                selectedUnits.Add(clickedUnit);
-                clickedUnit.SetSelected(true);
-
-                RangeIndicator rangeIndicator = clickedUnit.GetComponent<RangeIndicator>();
-                if (rangeIndicator != null) rangeIndicator.Show();
-
-                Debug.Log("SELECTION SUCCESS.");
-            }
-            else
-            {
-                Debug.LogWarning("SELECTION FAILED: Wrong faction tag.");
-            }
-        }
-        else
-        {
+            ClearSelection();
+            lastClickedUnit = null;
             Debug.Log("RAYCAST MISSED: The mouse did not hit any physical colliders.");
+            return;
         }
+
+        Debug.Log($"RAYCAST HIT: Object = {hit.collider.gameObject.name}, Tag = {hit.collider.tag}");
+
+        SelectableUnit clickedUnit = hit.collider.GetComponentInParent<SelectableUnit>();
+        if (clickedUnit == null)
+        {
+            ClearSelection();
+            lastClickedUnit = null;
+            Debug.LogWarning("SELECTION FAILED: No SelectableUnit script found on this object or its parent.");
+            return;
+        }
+
+        string validTag = GetValidSelectionTag();
+        Debug.Log($"FACTION CHECK: Player needs '{validTag}'. Clicked unit is '{clickedUnit.gameObject.tag}'.");
+
+        if (!clickedUnit.gameObject.CompareTag(validTag))
+        {
+            ClearSelection();
+            lastClickedUnit = null;
+            Debug.LogWarning("SELECTION FAILED: Wrong faction tag.");
+            return;
+        }
+
+        bool isDoubleClick = clickedUnit == lastClickedUnit && Time.unscaledTime - lastClickTime <= doubleClickThreshold;
+        lastClickedUnit = clickedUnit;
+        lastClickTime = Time.unscaledTime;
+
+        if (isDoubleClick && TrySelectSquad(clickedUnit))
+        {
+            return;
+        }
+
+        ClearSelection();
+        AddUnitToSelection(clickedUnit);
+        Debug.Log("SELECTION SUCCESS.");
+    }
+
+    private bool TrySelectSquad(SelectableUnit clickedUnit)
+    {
+        SquadMember squadMember = clickedUnit.GetComponent<SquadMember>();
+        if (squadMember == null || squadMember.Squad == null)
+        {
+            return false;
+        }
+
+        ClearSelection();
+        string validTag = GetValidSelectionTag();
+
+        foreach (GameObject memberObject in squadMember.Squad.Members)
+        {
+            if (memberObject == null || !memberObject.CompareTag(validTag)) continue;
+
+            SelectableUnit member = memberObject.GetComponent<SelectableUnit>();
+            if (member != null)
+            {
+                AddUnitToSelection(member);
+            }
+        }
+
+        if (selectedUnits.Count > 0)
+        {
+            Debug.Log($"SQUAD SELECTION: {squadMember.Squad.DisplayName} selected ({selectedUnits.Count} units).");
+            return true;
+        }
+
+        return false;
+    }
+
+    private void AddUnitToSelection(SelectableUnit unit)
+    {
+        if (unit == null || selectedUnits.Contains(unit)) return;
+
+        selectedUnits.Add(unit);
+        unit.SetSelected(true);
+
+        RangeIndicator rangeIndicator = unit.GetComponent<RangeIndicator>();
+        if (rangeIndicator != null) rangeIndicator.Show();
     }
 
     void SelectUnitsInBox()
@@ -262,11 +312,7 @@ public class SelectionManager : MonoBehaviour
 
             if (screenPos.z > 0 && selectionRect.Contains(new Vector2(screenPos.x, screenPos.y)))
             {
-                selectedUnits.Add(unit);
-                unit.SetSelected(true);
-
-                RangeIndicator rangeIndicator = unit.GetComponent<RangeIndicator>();
-                if (rangeIndicator != null) rangeIndicator.Show();
+                AddUnitToSelection(unit);
             }
         }
     }
