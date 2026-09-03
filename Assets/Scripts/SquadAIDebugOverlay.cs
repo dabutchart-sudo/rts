@@ -11,9 +11,9 @@ public sealed class SquadAIDebugOverlay : MonoBehaviour
     [SerializeField] private bool visible = false;
     [SerializeField] private bool showBothFactions = false;
     [SerializeField] private bool drawObjectiveLines = true;
-    [SerializeField] private float panelWidth = 520f;
+    [SerializeField] private float panelWidth = 680f;
     [SerializeField] private float panelMargin = 14f;
-    [SerializeField] private int fontSize = 14;
+    [SerializeField] private int fontSize = 18;
 
     [Header("Objective Lines")]
     [SerializeField] private float objectiveLineWidth = 3f;
@@ -93,7 +93,7 @@ public sealed class SquadAIDebugOverlay : MonoBehaviour
             text.AppendLine();
         }
 
-        float usablePanelWidth = Mathf.Min(panelWidth, Mathf.Max(200f, Screen.width - panelMargin * 2f));
+        float usablePanelWidth = Mathf.Min(panelWidth, Mathf.Max(260f, Screen.width - panelMargin * 2f));
         GUIContent content = new GUIContent(text.ToString());
         float contentHeight = bodyStyle.CalcHeight(content, usablePanelWidth - 24f) + 24f;
         float height = Mathf.Min(Screen.height - panelMargin * 2f, contentHeight);
