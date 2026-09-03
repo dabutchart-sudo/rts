@@ -20,7 +20,7 @@ public class ControlModeHUD : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void CreateHUD()
     {
-        if (FindFirstObjectByType<ControlModeHUD>(FindObjectsInactive.Include) != null) return;
+        if (FindAnyObjectByType<ControlModeHUD>(FindObjectsInactive.Include) != null) return;
 
         GameObject host = new GameObject("ControlModeHUD");
         host.AddComponent<ControlModeHUD>();
@@ -77,7 +77,7 @@ public class ControlModeHUD : MonoBehaviour
 
     private void BuildUI()
     {
-        Canvas[] canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        Canvas[] canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Include);
         Canvas gameplayCanvas = null;
 
         foreach (Canvas canvas in canvases)
