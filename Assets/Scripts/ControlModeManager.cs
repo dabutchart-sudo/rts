@@ -20,6 +20,22 @@ public class ControlModeManager : MonoBehaviour
 
     public event Action<ControlMode> ModeChanged;
 
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+    private static void EnsureInstanceExists()
+    {
+        if (Instance != null) return;
+
+        ControlModeManager existing = FindFirstObjectByType<ControlModeManager>(FindObjectsInactive.Include);
+        if (existing != null)
+        {
+            Instance = existing;
+            return;
+        }
+
+        GameObject managerObject = new GameObject("ControlModeManager");
+        managerObject.AddComponent<ControlModeManager>();
+    }
+
     private void Awake()
     {
         if (Instance != null && Instance != this)
