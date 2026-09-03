@@ -9,14 +9,13 @@ public sealed class SquadAIDebugOverlay : MonoBehaviour
 
     [Header("Debug Overlay")]
     [SerializeField] private bool visible = false;
-    [SerializeField] private bool showBothFactions = true;
+    [SerializeField] private bool showBothFactions = false;
     [SerializeField] private bool drawObjectiveLines = true;
     [SerializeField] private float panelWidth = 520f;
     [SerializeField] private float panelMargin = 14f;
-    [SerializeField] private float lineHeight = 20f;
+    [SerializeField] private int fontSize = 14;
 
     private GUIStyle panelStyle;
-    private GUIStyle headerStyle;
     private GUIStyle bodyStyle;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -56,8 +55,7 @@ public sealed class SquadAIDebugOverlay : MonoBehaviour
 
     private void OnGUI()
     {
-        if (!visible) return;
-        if (SquadManager.Instance == null) return;
+        if (!visible || SquadManager.Instance == null) return;
 
         EnsureStyles();
 
@@ -87,7 +85,8 @@ public sealed class SquadAIDebugOverlay : MonoBehaviour
         }
 
         GUIContent content = new GUIContent(text.ToString());
-        float height = Mathf.Min(Screen.height - panelMargin * 2f, bodyStyle.CalcHeight(content, panelWidth - 24f) + 24f);
+        float contentHeight = bodyStyle.CalcHeight(content, panelWidth - 24f) + 24f;
+        float height = Mathf.Min(Screen.height - panelMargin * 2f, contentHeight);
         Rect panelRect = new Rect(panelMargin, panelMargin, panelWidth, height);
 
         GUI.Box(panelRect, GUIContent.none, panelStyle);
@@ -173,22 +172,12 @@ public sealed class SquadAIDebugOverlay : MonoBehaviour
         if (panelStyle != null) return;
 
         panelStyle = new GUIStyle(GUI.skin.box);
-        panelStyle.normal.background = Texture2D.whiteTexture;
-        panelStyle.normal.textColor = Color.white;
-
-        headerStyle = new GUIStyle(GUI.skin.label)
-        {
-            fontSize = 16,
-            fontStyle = FontStyle.Bold
-        };
-
         bodyStyle = new GUIStyle(GUI.skin.label)
         {
-            fontSize = 14,
+            fontSize = fontSize,
             wordWrap = false,
             richText = false,
-            clipping = TextClipping.Clip,
-            lineHeight = lineHeight
+            clipping = TextClipping.Clip
         };
     }
 }
