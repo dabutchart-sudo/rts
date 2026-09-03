@@ -13,7 +13,7 @@ public class AICommander : MonoBehaviour
 
     [Header("Decision Making")]
     [Tooltip("How often the AI checks the store to make purchases")]
-    public float decisionInterval = 4f; 
+    public float decisionInterval = 4f;
 
     private float xpTimer = 0f;
     private float decisionTimer = 0f;
@@ -31,11 +31,11 @@ public class AICommander : MonoBehaviour
         // 1. Do nothing while waiting on the main menu
         if (GameManager.Instance.playerFaction == Faction.None) return;
 
-        // 2. THE AIRTIGHT LOCK: 
+        // 2. THE AIRTIGHT LOCK:
         // If we are NOT testing, and this AI matches the human's faction, skip this frame entirely!
         if (!GameManager.Instance.enableAutoTestMode && aiFaction == GameManager.Instance.playerFaction)
         {
-            return; 
+            return;
         }
 
         // 3. Drip XP over time (Only runs if AI is allowed to act)
@@ -66,7 +66,7 @@ public class AICommander : MonoBehaviour
             if (cp != null && cp.IsControlledBy(aiFaction))
             {
                 PurchasableUnit[] availableUnits = cp.GetAvailableUnits(aiFaction);
-                
+
                 // Add any unit the AI can afford to the list of options
                 foreach (PurchasableUnit unit in availableUnits)
                 {
@@ -92,8 +92,24 @@ public class AICommander : MonoBehaviour
     {
         aiCommandXP -= unit.xpCost;
         Transform spawnLocation = sourceBase.GetNextAvailableSpawnPoint();
-        Instantiate(unit.unitPrefab, spawnLocation.position, spawnLocation.rotation);
-        
+        GameObject spawnedUnit = Instantiate(unit.unitPrefab, spawnLocation.position, spawnLocation.rotation);
+        RegisterPurchasedSpecialist(spawnedUnit, unit);
+
         Debug.Log($"🤖 AI COMMANDER ({aiFaction}): Deployed {unit.unitDisplayName} at {sourceBase.capturePointName}! Remaining XP: {aiCommandXP}");
+    }
+
+    private void RegisterPurchasedSpecialist(GameObject spawnedUnit, PurchasableUnit unit)
+    {
+        if (spawnedUnit == null || unit == null) return;
+
+        UnitClass unitClass = UnitClassIdentity.InferFromDisplayName(unit.unitDisplayName);
+        if (unitClass == UnitClass.Assault) return;
+
+        UnitClassIdentity.Ensure(spawnedUnit, unitClass);
+        SquadManager squadManager = SquadManager.EnsureInstance();
+        if (squadManager != null)
+        {
+            squadManager.RegisterSpecialistUnit(spawnedUnit, unitClass);
+        }
     }
 }
