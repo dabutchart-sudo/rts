@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Text;
 using UnityEngine;
 
 public sealed class SquadAIController : MonoBehaviour
@@ -119,6 +120,47 @@ public sealed class SquadAIController : MonoBehaviour
         }
 
         return bestDecision.Target;
+    }
+
+    public string GetDiagnosticReport(Squad squad)
+    {
+        if (squad == null) return "No squad";
+
+        StringBuilder report = new StringBuilder();
+        string objectiveName = squad.StrategicObjective != null ? squad.StrategicObjective.name : "None";
+        float timeUntilThink = GetTimeUntilNextThink(squad);
+
+        report.Append($"{squad.DisplayName} [{squad.Role}]  Members {squad.MemberCount}  Order {squad.CurrentOrder}/{squad.CurrentCommandSource}");
+        report.Append($"\nObjective: {objectiveName}  Next think: {timeUntilThink:0.0}s");
+
+        if (GameManager.Instance == null || GameManager.Instance.sectors == null)
+        {
+            return report.ToString();
+        }
+
+        int sectorIndex = GameManager.Instance.currentSectorIndex;
+        if (sectorIndex < 0 || sectorIndex >= GameManager.Instance.sectors.Length)
+        {
+            return report.ToString();
+        }
+
+        List<CapturePoint> activePoints = GetActivePoints(GameManager.Instance.sectors[sectorIndex]);
+        bool isAttacker = squad.Faction == Faction.Attacker;
+
+        foreach (CapturePoint point in activePoints)
+        {
+            float score = ScoreObjective(squad, point, activePoints, isAttacker, point.transform == squad.StrategicObjective);
+            report.Append($"\n  {point.capturePointName}: {score:0.0}  cap {point.captureProgress:0}%  A{point.attackerCount}/D{point.defenderCount}");
+        }
+
+        return report.ToString();
+    }
+
+    public float GetTimeUntilNextThink(Squad squad)
+    {
+        if (squad == null || string.IsNullOrEmpty(squad.SquadId)) return 0f;
+        if (!nextThinkTimes.TryGetValue(squad.SquadId, out float nextThink)) return 0f;
+        return Mathf.Max(0f, nextThink - Time.time);
     }
 
     private bool IsThinkDue(Squad squad)
