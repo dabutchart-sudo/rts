@@ -34,7 +34,7 @@ public sealed class SquadManager : MonoBehaviour
     {
         if (Instance != null) return Instance;
 
-        SquadManager existing = FindFirstObjectByType<SquadManager>(FindObjectsInactive.Include);
+        SquadManager existing = FindAnyObjectByType<SquadManager>(FindObjectsInactive.Include);
         if (existing != null)
         {
             Instance = existing;
