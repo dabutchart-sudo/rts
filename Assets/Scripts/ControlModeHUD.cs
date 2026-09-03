@@ -1,5 +1,7 @@
 using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.InputSystem.UI;
 using UnityEngine.UI;
 
 public class ControlModeHUD : MonoBehaviour
@@ -26,6 +28,7 @@ public class ControlModeHUD : MonoBehaviour
 
     private void Start()
     {
+        EnsureUIInputSystem();
         BuildUI();
 
         if (ControlModeManager.Instance != null)
@@ -41,6 +44,35 @@ public class ControlModeHUD : MonoBehaviour
         {
             ControlModeManager.Instance.ModeChanged -= HandleModeChanged;
         }
+    }
+
+    private void EnsureUIInputSystem()
+    {
+        EventSystem eventSystem = EventSystem.current;
+
+        if (eventSystem == null)
+        {
+            GameObject eventSystemObject = new GameObject("EventSystem_Runtime");
+            eventSystem = eventSystemObject.AddComponent<EventSystem>();
+        }
+
+        InputSystemUIInputModule inputModule = eventSystem.GetComponent<InputSystemUIInputModule>();
+        if (inputModule == null)
+        {
+            BaseInputModule[] existingModules = eventSystem.GetComponents<BaseInputModule>();
+            foreach (BaseInputModule module in existingModules)
+            {
+                if (module != null)
+                {
+                    module.enabled = false;
+                }
+            }
+
+            inputModule = eventSystem.gameObject.AddComponent<InputSystemUIInputModule>();
+        }
+
+        inputModule.enabled = true;
+        inputModule.AssignDefaultActions();
     }
 
     private void BuildUI()
@@ -63,6 +95,13 @@ public class ControlModeHUD : MonoBehaviour
             return;
         }
 
+        GraphicRaycaster raycaster = gameplayCanvas.GetComponent<GraphicRaycaster>();
+        if (raycaster == null)
+        {
+            raycaster = gameplayCanvas.gameObject.AddComponent<GraphicRaycaster>();
+        }
+        raycaster.enabled = true;
+
         Transform existingPanel = gameplayCanvas.transform.Find("ControlModePanel");
         if (existingPanel != null)
         {
@@ -71,6 +110,7 @@ public class ControlModeHUD : MonoBehaviour
 
         GameObject panel = new GameObject("ControlModePanel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(HorizontalLayoutGroup));
         panel.transform.SetParent(gameplayCanvas.transform, false);
+        panel.transform.SetAsLastSibling();
 
         RectTransform panelRect = panel.GetComponent<RectTransform>();
         panelRect.anchorMin = new Vector2(0.5f, 1f);
@@ -81,6 +121,7 @@ public class ControlModeHUD : MonoBehaviour
 
         Image panelImage = panel.GetComponent<Image>();
         panelImage.color = new Color(0.04f, 0.05f, 0.07f, 0.82f);
+        panelImage.raycastTarget = false;
 
         HorizontalLayoutGroup layout = panel.GetComponent<HorizontalLayoutGroup>();
         layout.padding = new RectOffset(7, 7, 7, 7);
@@ -103,18 +144,12 @@ public class ControlModeHUD : MonoBehaviour
 
         Image image = buttonObject.GetComponent<Image>();
         image.color = NormalColor;
+        image.raycastTarget = true;
 
         Button button = buttonObject.GetComponent<Button>();
         button.targetGraphic = image;
+        button.interactable = true;
         button.onClick.AddListener(() => SetMode(mode));
-
-        ColorBlock colors = button.colors;
-        colors.normalColor = Color.white;
-        colors.highlightedColor = new Color(0.92f, 0.92f, 0.92f, 1f);
-        colors.pressedColor = new Color(0.78f, 0.78f, 0.78f, 1f);
-        colors.selectedColor = Color.white;
-        colors.disabledColor = new Color(0.5f, 0.5f, 0.5f, 0.5f);
-        button.colors = colors;
 
         GameObject textObject = new GameObject("Label", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
         textObject.transform.SetParent(buttonObject.transform, false);
@@ -150,6 +185,7 @@ public class ControlModeHUD : MonoBehaviour
             return;
         }
 
+        Debug.Log($"ControlModeHUD clicked: {mode}");
         ControlModeManager.Instance.SetMode(mode);
         Refresh(mode);
     }
