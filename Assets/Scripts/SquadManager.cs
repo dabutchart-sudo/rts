@@ -8,6 +8,8 @@ public sealed class SquadManager : MonoBehaviour
     [Header("Squad Structure")]
     [SerializeField] private int squadCapacity = 4;
     [SerializeField] private int squadsPerFaction = 4;
+    [Tooltip("Additional non-Assault infantry slots available in each squad. These do not reduce the four core Assault slots.")]
+    [SerializeField] private int specialistSlotsPerSquad = 1;
 
     [Header("Runtime Squads")]
     [SerializeField] private List<Squad> attackerSquads = new List<Squad>();
@@ -100,6 +102,20 @@ public sealed class SquadManager : MonoBehaviour
     public Squad RegisterAssaultUnit(GameObject unit)
     {
         if (unit == null) return null;
+        UnitClassIdentity.Ensure(unit, UnitClass.Assault);
+        return RegisterUnit(unit, UnitClass.Assault);
+    }
+
+    public Squad RegisterSpecialistUnit(GameObject unit, UnitClass unitClass)
+    {
+        if (unit == null || unitClass == UnitClass.Assault) return null;
+        UnitClassIdentity.Ensure(unit, unitClass);
+        return RegisterUnit(unit, unitClass);
+    }
+
+    public Squad RegisterUnit(GameObject unit, UnitClass unitClass)
+    {
+        if (unit == null) return null;
 
         Faction faction = GetFaction(unit);
         if (faction == Faction.None)
@@ -116,23 +132,19 @@ public sealed class SquadManager : MonoBehaviour
             if (squad.Contains(unit)) return squad;
         }
 
-        Squad targetSquad = null;
-        foreach (Squad squad in squads)
-        {
-            if (squad.MemberCount < squadCapacity)
-            {
-                targetSquad = squad;
-                break;
-            }
-        }
+        Squad targetSquad = unitClass == UnitClass.Assault
+            ? FindSquadForAssault(squads)
+            : FindSquadForSpecialist(squads, unitClass);
 
         if (targetSquad == null)
         {
-            Debug.Log($"SquadManager: All {faction} squad slots are occupied. '{unit.name}' remains unassigned until a slot becomes free.");
+            string slotType = unitClass == UnitClass.Assault ? "Assault" : "specialist";
+            Debug.Log($"SquadManager: All {faction} {slotType} squad slots are occupied. '{unit.name}' remains unassigned.");
             return null;
         }
 
-        if (!targetSquad.TryAddMember(unit, squadCapacity)) return null;
+        int totalCapacity = Mathf.Max(1, squadCapacity) + Mathf.Max(0, specialistSlotsPerSquad);
+        if (!targetSquad.TryAddMember(unit, totalCapacity)) return null;
 
         SquadMember squadMember = unit.GetComponent<SquadMember>();
         if (squadMember == null)
@@ -142,8 +154,98 @@ public sealed class SquadManager : MonoBehaviour
 
         squadMember.Assign(targetSquad);
 
-        Debug.Log($"SquadManager: {unit.name} assigned to {faction} {targetSquad.DisplayName} [{targetSquad.Role}] ({targetSquad.MemberCount}/{squadCapacity}).");
+        UnitClassIdentity.Ensure(unit, unitClass);
+        Debug.Log($"SquadManager: {unit.name} ({unitClass}) assigned to {faction} {targetSquad.DisplayName} [{targetSquad.Role}] ({targetSquad.MemberCount}/{totalCapacity}).");
         return targetSquad;
+    }
+
+    private Squad FindSquadForAssault(List<Squad> squads)
+    {
+        foreach (Squad squad in squads)
+        {
+            if (CountClass(squad, UnitClass.Assault) < Mathf.Max(1, squadCapacity))
+            {
+                return squad;
+            }
+        }
+
+        return null;
+    }
+
+    private Squad FindSquadForSpecialist(List<Squad> squads, UnitClass unitClass)
+    {
+        int allowedSpecialists = Mathf.Max(0, specialistSlotsPerSquad);
+        if (allowedSpecialists == 0) return null;
+
+        Squad best = null;
+        int bestSpecialistCount = int.MaxValue;
+        int bestRoleBias = int.MinValue;
+
+        foreach (Squad squad in squads)
+        {
+            int specialistCount = CountSpecialists(squad);
+            if (specialistCount >= allowedSpecialists) continue;
+
+            int roleBias = GetSpecialistRoleBias(squad, unitClass);
+            if (best == null || specialistCount < bestSpecialistCount ||
+                (specialistCount == bestSpecialistCount && roleBias > bestRoleBias))
+            {
+                best = squad;
+                bestSpecialistCount = specialistCount;
+                bestRoleBias = roleBias;
+            }
+        }
+
+        return best;
+    }
+
+    private int GetSpecialistRoleBias(Squad squad, UnitClass unitClass)
+    {
+        if (squad == null) return 0;
+
+        switch (unitClass)
+        {
+            case UnitClass.Support:
+                return squad.Role == SquadRole.Support ? 3 : (squad.Role == SquadRole.Defend ? 2 : 0);
+            case UnitClass.Recon:
+                return squad.Role == SquadRole.Reserve ? 3 : (squad.Role == SquadRole.Attack ? 1 : 0);
+            case UnitClass.Engineer:
+                return squad.Role == SquadRole.Attack || squad.Role == SquadRole.Defend ? 2 : 0;
+            default:
+                return 0;
+        }
+    }
+
+    private int CountSpecialists(Squad squad)
+    {
+        if (squad == null) return 0;
+
+        int count = 0;
+        foreach (GameObject member in squad.Members)
+        {
+            if (member != null && UnitClassIdentity.GetClass(member) != UnitClass.Assault)
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private int CountClass(Squad squad, UnitClass unitClass)
+    {
+        if (squad == null) return 0;
+
+        int count = 0;
+        foreach (GameObject member in squad.Members)
+        {
+            if (member != null && UnitClassIdentity.GetClass(member) == unitClass)
+            {
+                count++;
+            }
+        }
+
+        return count;
     }
 
     public void UnregisterUnit(GameObject unit)
