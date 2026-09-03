@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.InputSystem;
 using UnityEngine.EventSystems;
+using UnityEngine.AI;
 using System.Collections.Generic;
 
 public class SelectionManager : MonoBehaviour
@@ -21,6 +22,16 @@ public class SelectionManager : MonoBehaviour
 
     [Tooltip("Maximum time between two clicks on the same unit for squad selection.")]
     public float doubleClickThreshold = 0.35f;
+
+    [Header("Formation Movement")]
+    [Tooltip("Distance between unit destinations when moving multiple selected units.")]
+    [Min(0.5f)] public float formationSpacing = 2.2f;
+
+    [Tooltip("How far Unity may search for a nearby valid NavMesh point for each formation slot.")]
+    [Min(0.1f)] public float formationNavMeshSampleRadius = 2.5f;
+
+    [Tooltip("If enabled, formations rotate to face the direction the group is moving.")]
+    public bool orientFormationToMovement = true;
 
     [Header("Unit Rosters")]
     public List<SelectableUnit> allUnits = new List<SelectableUnit>();
@@ -336,21 +347,94 @@ public class SelectionManager : MonoBehaviour
         Vector2 mousePos = Mouse.current.position.ReadValue();
         Ray ray = Camera.main.ScreenPointToRay(mousePos);
 
-        if (Physics.Raycast(ray, out RaycastHit hit))
-        {
-            if (waypointPrefab != null)
-            {
-                Instantiate(waypointPrefab, hit.point + new Vector3(0, 0.1f, 0), Quaternion.Euler(90, 0, 0));
-            }
+        if (!Physics.Raycast(ray, out RaycastHit hit)) return;
 
-            foreach (SelectableUnit unit in selectedUnits)
+        if (waypointPrefab != null)
+        {
+            Instantiate(waypointPrefab, hit.point + new Vector3(0, 0.1f, 0), Quaternion.Euler(90, 0, 0));
+        }
+
+        List<SelectableUnit> validUnits = new List<SelectableUnit>();
+        foreach (SelectableUnit unit in selectedUnits)
+        {
+            if (unit != null && unit.GetComponent<AutonomousUnit>() != null)
             {
-                if (unit != null)
-                {
-                    AutonomousUnit ai = unit.GetComponent<AutonomousUnit>();
-                    if (ai != null) ai.MoveToDirectOrder(hit.point);
-                }
+                validUnits.Add(unit);
             }
         }
+
+        if (validUnits.Count == 0) return;
+
+        if (validUnits.Count == 1)
+        {
+            AutonomousUnit singleUnitAI = validUnits[0].GetComponent<AutonomousUnit>();
+            singleUnitAI.MoveToDirectOrder(hit.point);
+            return;
+        }
+
+        Vector3 groupCenter = CalculateGroupCenter(validUnits);
+        Vector3 forward = hit.point - groupCenter;
+        forward.y = 0f;
+
+        if (!orientFormationToMovement || forward.sqrMagnitude < 0.01f)
+        {
+            forward = Vector3.forward;
+        }
+        else
+        {
+            forward.Normalize();
+        }
+
+        Vector3 right = Vector3.Cross(Vector3.up, forward).normalized;
+
+        int columns = Mathf.CeilToInt(Mathf.Sqrt(validUnits.Count));
+        int rows = Mathf.CeilToInt(validUnits.Count / (float)columns);
+
+        for (int i = 0; i < validUnits.Count; i++)
+        {
+            int row = i / columns;
+            int column = i % columns;
+
+            float horizontalOffset = (column - (columns - 1) * 0.5f) * formationSpacing;
+            float depthOffset = (row - (rows - 1) * 0.5f) * formationSpacing;
+
+            Vector3 desiredPosition = hit.point + right * horizontalOffset + forward * depthOffset;
+            Vector3 finalPosition = GetNearestNavMeshPoint(desiredPosition, hit.point);
+
+            AutonomousUnit ai = validUnits[i].GetComponent<AutonomousUnit>();
+            ai.MoveToDirectOrder(finalPosition);
+        }
+
+        Debug.Log($"FORMATION MOVE: {validUnits.Count} units ordered in a {rows}x{columns} formation with {formationSpacing:0.0}m spacing.");
+    }
+
+    private Vector3 CalculateGroupCenter(List<SelectableUnit> units)
+    {
+        Vector3 total = Vector3.zero;
+        int count = 0;
+
+        foreach (SelectableUnit unit in units)
+        {
+            if (unit == null) continue;
+            total += unit.transform.position;
+            count++;
+        }
+
+        return count > 0 ? total / count : Vector3.zero;
+    }
+
+    private Vector3 GetNearestNavMeshPoint(Vector3 desiredPosition, Vector3 fallbackPosition)
+    {
+        if (NavMesh.SamplePosition(desiredPosition, out NavMeshHit navHit, formationNavMeshSampleRadius, NavMesh.AllAreas))
+        {
+            return navHit.position;
+        }
+
+        if (NavMesh.SamplePosition(fallbackPosition, out NavMeshHit fallbackHit, formationNavMeshSampleRadius, NavMesh.AllAreas))
+        {
+            return fallbackHit.position;
+        }
+
+        return desiredPosition;
     }
 }
