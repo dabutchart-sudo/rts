@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.InputSystem;
+using UnityEngine.EventSystems;
 using System.Collections.Generic;
 
 public class SelectionManager : MonoBehaviour
@@ -24,6 +25,7 @@ public class SelectionManager : MonoBehaviour
 
     private Vector2 startMousePos;
     private bool isDragging = false;
+    private readonly List<RaycastResult> uiRaycastResults = new List<RaycastResult>();
 
     void Awake()
     {
@@ -66,7 +68,10 @@ public class SelectionManager : MonoBehaviour
             return;
         }
 
-        if (UnityEngine.EventSystems.EventSystem.current != null && UnityEngine.EventSystems.EventSystem.current.IsPointerOverGameObject())
+        // Only block RTS input when the pointer is over an interactive UI control
+        // such as a Button, Toggle, Slider, etc. Decorative/full-screen UI graphics
+        // must not prevent selecting units in the world.
+        if (IsPointerOverInteractiveUI())
         {
             if (isDragging)
             {
@@ -123,6 +128,33 @@ public class SelectionManager : MonoBehaviour
                 IssueMoveOrder();
             }
         }
+    }
+
+    private bool IsPointerOverInteractiveUI()
+    {
+        EventSystem eventSystem = EventSystem.current;
+        if (eventSystem == null || Mouse.current == null) return false;
+
+        PointerEventData pointerData = new PointerEventData(eventSystem)
+        {
+            position = Mouse.current.position.ReadValue()
+        };
+
+        uiRaycastResults.Clear();
+        eventSystem.RaycastAll(pointerData, uiRaycastResults);
+
+        foreach (RaycastResult result in uiRaycastResults)
+        {
+            if (result.gameObject == null) continue;
+
+            Selectable interactiveControl = result.gameObject.GetComponentInParent<Selectable>();
+            if (interactiveControl != null && interactiveControl.IsActive() && interactiveControl.IsInteractable())
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void HandleControlModeChanged(ControlMode mode)
