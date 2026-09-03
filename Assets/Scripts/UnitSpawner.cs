@@ -125,6 +125,8 @@ public class UnitSpawner : MonoBehaviour
         Vector3 finalPos = spawnPos + new Vector3(randomOffset.x, 0, randomOffset.y);
         GameObject spawnedUnit = Instantiate(assaultPrefab, finalPos, Quaternion.identity);
 
+        UnitClassIdentity.Ensure(spawnedUnit, UnitClass.Assault);
+
         SquadManager squadManager = SquadManager.EnsureInstance();
         if (squadManager != null)
         {
