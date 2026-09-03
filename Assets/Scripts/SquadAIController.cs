@@ -2,6 +2,13 @@ using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
 
+public enum SquadStrengthState
+{
+    Healthy,
+    Depleted,
+    Critical
+}
+
 public sealed class SquadAIController : MonoBehaviour
 {
     public static SquadAIController Instance { get; private set; }
@@ -23,6 +30,34 @@ public sealed class SquadAIController : MonoBehaviour
     [SerializeField] private float roleBiasWeight = 18f;
     [SerializeField] private float currentObjectiveBonus = 10f;
     [SerializeField] private float objectiveCrowdingPenalty = 7f;
+
+    [Header("Squad Strength")]
+    [Tooltip("Squads at or above this member count are treated as healthy.")]
+    [SerializeField] private int healthyMemberThreshold = 3;
+
+    [Tooltip("Squads at or below this member count are treated as critical.")]
+    [SerializeField] private int criticalMemberThreshold = 1;
+
+    [Tooltip("Extra penalty per enemy on an objective when a squad is depleted.")]
+    [SerializeField] private float depletedEnemyPenalty = 6f;
+
+    [Tooltip("Extra penalty per enemy on an objective when a squad is critical.")]
+    [SerializeField] private float criticalEnemyPenalty = 14f;
+
+    [Tooltip("Bonus per friendly already at an objective when a squad is depleted.")]
+    [SerializeField] private float depletedFriendlySafetyBonus = 2.5f;
+
+    [Tooltip("Bonus per friendly already at an objective when a squad is critical.")]
+    [SerializeField] private float criticalFriendlySafetyBonus = 5f;
+
+    [Tooltip("Bonus for a friendly-controlled objective when a squad is depleted.")]
+    [SerializeField] private float depletedSafeObjectiveBonus = 18f;
+
+    [Tooltip("Bonus for a friendly-controlled objective when a squad is critical.")]
+    [SerializeField] private float criticalSafeObjectiveBonus = 42f;
+
+    [Tooltip("How strongly reduced squads prefer objectives that are already closer to friendly control.")]
+    [SerializeField] private float reducedSquadControlBias = 0.18f;
 
     private readonly Dictionary<string, float> nextThinkTimes = new Dictionary<string, float>();
 
@@ -104,7 +139,9 @@ public sealed class SquadAIController : MonoBehaviour
             if (currentPoint != null)
             {
                 float currentScore = ScoreObjective(squad, currentPoint, activePoints, isAttacker, true);
-                if (bestDecision.Score < currentScore + objectiveSwitchThreshold)
+                float switchThreshold = GetSwitchThresholdForStrength(squad);
+
+                if (bestDecision.Score < currentScore + switchThreshold)
                 {
                     return previousObjective;
                 }
@@ -116,7 +153,7 @@ public sealed class SquadAIController : MonoBehaviour
         if (logObjectiveChanges && bestDecision.Target != previousObjective)
         {
             string objectiveName = bestDecision.Target != null ? bestDecision.Target.name : "None";
-            Debug.Log($"Squad AI: {squad.Faction} {squad.DisplayName} [{squad.Role}] -> {objectiveName} | score {bestDecision.Score:F1}");
+            Debug.Log($"Squad AI: {squad.Faction} {squad.DisplayName} [{squad.Role}/{GetStrengthState(squad)}] -> {objectiveName} | score {bestDecision.Score:F1}");
         }
 
         return bestDecision.Target;
@@ -129,8 +166,9 @@ public sealed class SquadAIController : MonoBehaviour
         StringBuilder report = new StringBuilder();
         string objectiveName = squad.StrategicObjective != null ? squad.StrategicObjective.name : "None";
         float timeUntilThink = GetTimeUntilNextThink(squad);
+        SquadStrengthState strength = GetStrengthState(squad);
 
-        report.Append($"{squad.DisplayName} [{squad.Role}]  Members {squad.MemberCount}  Order {squad.CurrentOrder}/{squad.CurrentCommandSource}");
+        report.Append($"{squad.DisplayName} [{squad.Role}]  Strength {strength} ({squad.MemberCount})  Order {squad.CurrentOrder}/{squad.CurrentCommandSource}");
         report.Append($"\nObjective: {objectiveName}  Next think: {timeUntilThink:0.0}s");
 
         if (GameManager.Instance == null || GameManager.Instance.sectors == null)
@@ -156,11 +194,41 @@ public sealed class SquadAIController : MonoBehaviour
         return report.ToString();
     }
 
+    public SquadStrengthState GetStrengthState(Squad squad)
+    {
+        int memberCount = squad != null ? squad.MemberCount : 0;
+
+        if (memberCount <= Mathf.Max(0, criticalMemberThreshold))
+        {
+            return SquadStrengthState.Critical;
+        }
+
+        if (memberCount < Mathf.Max(1, healthyMemberThreshold))
+        {
+            return SquadStrengthState.Depleted;
+        }
+
+        return SquadStrengthState.Healthy;
+    }
+
     public float GetTimeUntilNextThink(Squad squad)
     {
         if (squad == null || string.IsNullOrEmpty(squad.SquadId)) return 0f;
         if (!nextThinkTimes.TryGetValue(squad.SquadId, out float nextThink)) return 0f;
         return Mathf.Max(0f, nextThink - Time.time);
+    }
+
+    private float GetSwitchThresholdForStrength(Squad squad)
+    {
+        switch (GetStrengthState(squad))
+        {
+            case SquadStrengthState.Critical:
+                return objectiveSwitchThreshold * 0.25f;
+            case SquadStrengthState.Depleted:
+                return objectiveSwitchThreshold * 0.6f;
+            default:
+                return objectiveSwitchThreshold;
+        }
     }
 
     private bool IsThinkDue(Squad squad)
@@ -341,6 +409,8 @@ public sealed class SquadAIController : MonoBehaviour
             }
         }
 
+        ApplySquadStrengthScoring(ref score, squad, point, isAttacker);
+
         int squadsAlreadyAssigned = CountOtherSquadsAssignedTo(point.transform, squad);
         score -= squadsAlreadyAssigned * objectiveCrowdingPenalty;
 
@@ -351,6 +421,43 @@ public sealed class SquadAIController : MonoBehaviour
 
         score += GetStableTieBreaker(squad, point);
         return score;
+    }
+
+    private void ApplySquadStrengthScoring(ref float score, Squad squad, CapturePoint point, bool isAttacker)
+    {
+        SquadStrengthState strength = GetStrengthState(squad);
+        if (strength == SquadStrengthState.Healthy) return;
+
+        int friendlyCount = isAttacker ? point.attackerCount : point.defenderCount;
+        int enemyCount = isAttacker ? point.defenderCount : point.attackerCount;
+
+        float enemyPenalty = strength == SquadStrengthState.Critical ? criticalEnemyPenalty : depletedEnemyPenalty;
+        float friendlyBonus = strength == SquadStrengthState.Critical ? criticalFriendlySafetyBonus : depletedFriendlySafetyBonus;
+        float safeBonus = strength == SquadStrengthState.Critical ? criticalSafeObjectiveBonus : depletedSafeObjectiveBonus;
+
+        score -= enemyCount * enemyPenalty;
+        score += friendlyCount * friendlyBonus;
+
+        if (isAttacker)
+        {
+            if (point.captureProgress >= 100f)
+            {
+                score += safeBonus;
+            }
+
+            float friendlyControl = Mathf.InverseLerp(-100f, 100f, point.captureProgress);
+            score += friendlyControl * 100f * reducedSquadControlBias;
+        }
+        else
+        {
+            if (!IsThreatened(point))
+            {
+                score += safeBonus;
+            }
+
+            float friendlyControl = Mathf.InverseLerp(100f, -100f, point.captureProgress);
+            score += friendlyControl * 100f * reducedSquadControlBias;
+        }
     }
 
     private int CountOtherSquadsAssignedTo(Transform target, Squad requestingSquad)
