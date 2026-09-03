@@ -81,7 +81,6 @@ public class TestDashboardOverlay : MonoBehaviour
             RefreshDashboard();
         }
 
-        // Clean up expired death markers
         float now = Time.time;
         activeDeathMarkers.RemoveAll(m => now >= m.expireTime);
     }
@@ -110,6 +109,7 @@ public class TestDashboardOverlay : MonoBehaviour
         else if (winner == "Defenders") TotalDefenderWins++;
 
         MatchDurations.Add(duration);
+        AutoTestTelemetry.RecordMatchCompleted(winner, duration);
     }
 
     public static void ResetBatchStats()
@@ -135,19 +135,27 @@ public class TestDashboardOverlay : MonoBehaviour
         float avgAtkLife = gm.attackerDeaths > 0 ? gm.attackerTotalLifespan / gm.attackerDeaths : 0f;
         float avgDefLife = gm.defenderDeaths > 0 ? gm.defenderTotalLifespan / gm.defenderDeaths : 0f;
 
-        string activeSectorName = (gm.sectors != null && gm.currentSectorIndex < gm.sectors.Length) 
-            ? gm.sectors[gm.currentSectorIndex].sectorName 
+        string activeSectorName = (gm.sectors != null && gm.currentSectorIndex < gm.sectors.Length)
+            ? gm.sectors[gm.currentSectorIndex].sectorName
             : $"Sector {gm.currentSectorIndex}";
 
         int totalMatches = TotalAttackerWins + TotalDefenderWins;
         float atkWsPct = totalMatches > 0 ? (float)TotalAttackerWins / totalMatches * 100f : 0f;
         float defWsPct = totalMatches > 0 ? (float)TotalDefenderWins / totalMatches * 100f : 0f;
 
-        string batchHeader = TargetMatchCount > 0 
-            ? $"<b>BATCH PROGRESS: {CurrentMatchNumber}/{TargetMatchCount}</b>" 
+        float avgMatchDuration = 0f;
+        if (MatchDurations.Count > 0)
+        {
+            float totalDuration = 0f;
+            foreach (float duration in MatchDurations) totalDuration += duration;
+            avgMatchDuration = totalDuration / MatchDurations.Count;
+        }
+
+        string batchHeader = TargetMatchCount > 0
+            ? $"<b>BATCH PROGRESS: {CurrentMatchNumber}/{TargetMatchCount}</b>"
             : $"<b>TEST RUN #{CurrentMatchNumber}</b>";
 
-        statsText.text = 
+        statsText.text =
             $"{batchHeader}\n" +
             $"<color=#FFD700>Speed:</color> {Time.timeScale:0}x | <color=#FFD700>Sector:</color> {activeSectorName}\n" +
             $"<color=#5A9BD5><b>ATTACKERS</b></color> [Tickets: {Mathf.Max(0, gm.attackerTickets)}]\n" +
@@ -155,7 +163,8 @@ public class TestDashboardOverlay : MonoBehaviour
             $"<color=#C00000><b>DEFENDERS</b></color> [Tickets: {Mathf.Max(0, gm.defenderTickets)}]\n" +
             $"Deaths: {gm.defenderDeaths} | Avg Life: {avgDefLife:F1}s | Burn: {defBurnRate:F1} t/m\n\n" +
             $"<b>BATCH AGGREGATE ({totalMatches} Finished):</b>\n" +
-            $"Atk Wins: {TotalAttackerWins} ({atkWsPct:F0}%) | Def Wins: {TotalDefenderWins} ({defWsPct:F0}%)";
+            $"Atk Wins: {TotalAttackerWins} ({atkWsPct:F0}%) | Def Wins: {TotalDefenderWins} ({defWsPct:F0}%)\n" +
+            $"Avg Match: {avgMatchDuration:F1}s | Detailed CSV telemetry enabled";
     }
 
     private void CreateOverlayUI()
@@ -180,7 +189,7 @@ public class TestDashboardOverlay : MonoBehaviour
         rt.anchorMax = new Vector2(1f, 1f);
         rt.pivot = new Vector2(1f, 1f);
         rt.anchoredPosition = new Vector2(-15f, -15f);
-        rt.sizeDelta = new Vector2(360f, 260f);
+        rt.sizeDelta = new Vector2(390f, 285f);
 
         GameObject textGo = new GameObject("StatsText", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
         textGo.transform.SetParent(overlayPanel.transform, false);
