@@ -398,6 +398,7 @@ public class GameManager : MonoBehaviour
             float duration = Time.time - matchStartTime;
             LogMatchData(winner);
             TestDashboardOverlay.RecordMatchCompleted(winner, duration);
+            AutoTestTelemetry.RecordMatchCompleted(winner, duration);
 
             int targetMatches = Mathf.Max(1, TestDashboardOverlay.TargetMatchCount);
             bool shouldContinueBatch = TestDashboardOverlay.CurrentMatchNumber < targetMatches;
