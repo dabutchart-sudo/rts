@@ -7,7 +7,7 @@ public class StoreManager : MonoBehaviour
 {
     [Header("UI References")]
     public Transform sidebarContainer;
-    public GameObject rowPrefab; 
+    public GameObject rowPrefab;
     public GameObject unitButtonPrefab;
 
     private class StoreButton
@@ -58,8 +58,8 @@ public class StoreManager : MonoBehaviour
                 if (cp == null) continue;
 
                 GameObject newRow = Instantiate(rowPrefab, sidebarContainer);
-                Debug.Log($"🛠️ UI CHECK: Created row for {cp.capturePointName}"); 
-                
+                Debug.Log($"🛠️ UI CHECK: Created row for {cp.capturePointName}");
+
                 TextMeshProUGUI rowText = newRow.GetComponentInChildren<TextMeshProUGUI>();
                 if (rowText != null) rowText.text = cp.capturePointName;
 
@@ -68,7 +68,7 @@ public class StoreManager : MonoBehaviour
                 foreach (PurchasableUnit unit in unitsToDisplay)
                 {
                     GameObject btnObj = Instantiate(unitButtonPrefab, newRow.transform);
-                    
+
                     StoreButton storeBtn = new StoreButton
                     {
                         button = btnObj.GetComponent<Button>(),
@@ -78,7 +78,7 @@ public class StoreManager : MonoBehaviour
 
                     TextMeshProUGUI btnText = btnObj.GetComponentInChildren<TextMeshProUGUI>();
                     if (btnText != null) btnText.text = $"{unit.unitDisplayName}\n{unit.xpCost} XP";
-                    
+
                     storeBtn.button.onClick.AddListener(() => PurchaseUnit(storeBtn.unit, storeBtn.sourceBase));
                     allStoreButtons.Add(storeBtn);
                 }
@@ -91,7 +91,7 @@ public class StoreManager : MonoBehaviour
         if (GameManager.Instance == null) return;
 
         Faction playerFaction = GameManager.Instance.playerFaction;
-        
+
         // Check the correct XP pool based on the player's faction
         int currentXP = (playerFaction == Faction.Attacker) ? GameManager.Instance.attackerXP : GameManager.Instance.defenderXP;
 
@@ -99,7 +99,7 @@ public class StoreManager : MonoBehaviour
         {
             bool canAfford = currentXP >= sb.unit.xpCost;
             bool ownsBase = sb.sourceBase.IsControlledBy(playerFaction);
-            
+
             // Button is ONLY interactable if you have the XP AND currently own the base
             sb.button.interactable = (canAfford && ownsBase);
         }
@@ -124,11 +124,27 @@ public class StoreManager : MonoBehaviour
             {
                 GameManager.Instance.defenderXP -= unit.xpCost;
             }
-            
+
             Transform spawnLoc = sourceBase.GetNextAvailableSpawnPoint();
-            Instantiate(unit.unitPrefab, spawnLoc.position, spawnLoc.rotation);
-            
-            RefreshButtonStates(); 
+            GameObject spawnedUnit = Instantiate(unit.unitPrefab, spawnLoc.position, spawnLoc.rotation);
+            RegisterPurchasedSpecialist(spawnedUnit, unit);
+
+            RefreshButtonStates();
+        }
+    }
+
+    private void RegisterPurchasedSpecialist(GameObject spawnedUnit, PurchasableUnit unit)
+    {
+        if (spawnedUnit == null || unit == null) return;
+
+        UnitClass unitClass = UnitClassIdentity.InferFromDisplayName(unit.unitDisplayName);
+        if (unitClass == UnitClass.Assault) return;
+
+        UnitClassIdentity.Ensure(spawnedUnit, unitClass);
+        SquadManager squadManager = SquadManager.EnsureInstance();
+        if (squadManager != null)
+        {
+            squadManager.RegisterSpecialistUnit(spawnedUnit, unitClass);
         }
     }
 }
