@@ -426,7 +426,7 @@ public class GameManager : MonoBehaviour
             writer.WriteLine($"{winner},{matchDuration:F1},{Mathf.Max(0, attackerTickets)},{Mathf.Max(0, defenderTickets)},{attackerDeaths},{defenderDeaths},{avgAttackerLife:F1},{avgDefenderLife:F1}");
         }
         
-        Debug.Log($"📊 LOGGED: {winner} Won | Time: {matchDuration:F1}s | Avg Atk Life: {avgAttackerLife:F1}s | Avg Def Life: {avgDefenderLife:F1}s");
+        Debug.Log($"📊 LOGGED: {winner} Won | Time: {matchDuration:F1}s | Avg Atk Life: {avgAttackerLife:F1}s | Avg Def Lifespan: {avgDefenderLife:F1}s");
     }
 
     public void AddXP(int amount) 
@@ -585,7 +585,8 @@ public class GameManager : MonoBehaviour
             }
         }
 
-        return Mathf.Abs(unit.GetInstanceID());
+        string fallbackIdentity = $"{unit.name}:{unit.transform.GetSiblingIndex()}";
+        return GetStablePositiveHash(fallbackIdentity);
     }
 
     private int GetStablePositiveHash(string value)
