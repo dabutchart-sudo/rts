@@ -9,6 +9,12 @@ public enum SquadStrengthState
     Critical
 }
 
+public enum SquadRecoveryState
+{
+    Normal,
+    Recovering
+}
+
 public sealed class SquadAIController : MonoBehaviour
 {
     public static SquadAIController Instance { get; private set; }
@@ -59,7 +65,27 @@ public sealed class SquadAIController : MonoBehaviour
     [Tooltip("How strongly reduced squads prefer objectives that are already closer to friendly control.")]
     [SerializeField] private float reducedSquadControlBias = 0.18f;
 
+    [Header("Reinforcement Recovery")]
+    [Tooltip("When enabled, reduced squads deliberately favour safe friendly positions while waiting for reinforcements.")]
+    [SerializeField] private bool enableReinforcementRecovery = true;
+
+    [Tooltip("Extra bonus applied to a friendly-controlled objective while a depleted squad is recovering.")]
+    [SerializeField] private float depletedRecoverySafeBonus = 28f;
+
+    [Tooltip("Extra bonus applied to a friendly-controlled objective while a critical squad is recovering.")]
+    [SerializeField] private float criticalRecoverySafeBonus = 65f;
+
+    [Tooltip("Penalty per metre from the faction reinforcement spawn while recovering. This encourages reduced squads to fall back rather than push deep.")]
+    [SerializeField] private float recoveryDepthPenalty = 0.35f;
+
+    [Tooltip("Extra penalty for entering a contested objective while recovering.")]
+    [SerializeField] private float recoveryContestedPenalty = 24f;
+
+    [Tooltip("Bonus for recovering near friendly soldiers, per friendly occupant at the objective.")]
+    [SerializeField] private float recoveryFriendlyPresenceBonus = 4f;
+
     private readonly Dictionary<string, float> nextThinkTimes = new Dictionary<string, float>();
+    private readonly Dictionary<string, SquadStrengthState> lastStrengthStates = new Dictionary<string, SquadStrengthState>();
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void EnsureRuntimeController()
@@ -121,9 +147,10 @@ public sealed class SquadAIController : MonoBehaviour
             return null;
         }
 
+        bool strengthChanged = RecordAndCheckStrengthChange(squad);
         bool existingObjectiveValid = IsExistingObjectiveStillValid(squad, activePoints, sectorIndex, isAttacker);
 
-        if (persistSquadObjectives && existingObjectiveValid && !IsThinkDue(squad))
+        if (persistSquadObjectives && existingObjectiveValid && !strengthChanged && !IsThinkDue(squad))
         {
             return squad.StrategicObjective;
         }
@@ -153,7 +180,7 @@ public sealed class SquadAIController : MonoBehaviour
         if (logObjectiveChanges && bestDecision.Target != previousObjective)
         {
             string objectiveName = bestDecision.Target != null ? bestDecision.Target.name : "None";
-            Debug.Log($"Squad AI: {squad.Faction} {squad.DisplayName} [{squad.Role}/{GetStrengthState(squad)}] -> {objectiveName} | score {bestDecision.Score:F1}");
+            Debug.Log($"Squad AI: {squad.Faction} {squad.DisplayName} [{squad.Role}/{GetStrengthState(squad)}/{GetRecoveryState(squad)}] -> {objectiveName} | score {bestDecision.Score:F1}");
         }
 
         return bestDecision.Target;
@@ -167,9 +194,10 @@ public sealed class SquadAIController : MonoBehaviour
         string objectiveName = squad.StrategicObjective != null ? squad.StrategicObjective.name : "None";
         float timeUntilThink = GetTimeUntilNextThink(squad);
         SquadStrengthState strength = GetStrengthState(squad);
+        SquadRecoveryState recovery = GetRecoveryState(squad);
 
-        report.Append($"{squad.DisplayName} [{squad.Role}]  Strength {strength} ({squad.MemberCount})  Order {squad.CurrentOrder}/{squad.CurrentCommandSource}");
-        report.Append($"\nObjective: {objectiveName}  Next think: {timeUntilThink:0.0}s");
+        report.Append($"{squad.DisplayName} [{squad.Role}]  Strength {strength} ({squad.MemberCount})  Recovery {recovery}");
+        report.Append($"\nOrder {squad.CurrentOrder}/{squad.CurrentCommandSource}  Objective: {objectiveName}  Next think: {timeUntilThink:0.0}s");
 
         if (GameManager.Instance == null || GameManager.Instance.sectors == null)
         {
@@ -211,11 +239,41 @@ public sealed class SquadAIController : MonoBehaviour
         return SquadStrengthState.Healthy;
     }
 
+    public SquadRecoveryState GetRecoveryState(Squad squad)
+    {
+        if (!enableReinforcementRecovery || squad == null)
+        {
+            return SquadRecoveryState.Normal;
+        }
+
+        return GetStrengthState(squad) == SquadStrengthState.Healthy
+            ? SquadRecoveryState.Normal
+            : SquadRecoveryState.Recovering;
+    }
+
     public float GetTimeUntilNextThink(Squad squad)
     {
         if (squad == null || string.IsNullOrEmpty(squad.SquadId)) return 0f;
         if (!nextThinkTimes.TryGetValue(squad.SquadId, out float nextThink)) return 0f;
         return Mathf.Max(0f, nextThink - Time.time);
+    }
+
+    private bool RecordAndCheckStrengthChange(Squad squad)
+    {
+        if (squad == null || string.IsNullOrEmpty(squad.SquadId)) return false;
+
+        SquadStrengthState current = GetStrengthState(squad);
+        if (!lastStrengthStates.TryGetValue(squad.SquadId, out SquadStrengthState previous))
+        {
+            lastStrengthStates[squad.SquadId] = current;
+            return false;
+        }
+
+        if (previous == current) return false;
+
+        lastStrengthStates[squad.SquadId] = current;
+        nextThinkTimes[squad.SquadId] = 0f;
+        return true;
     }
 
     private float GetSwitchThresholdForStrength(Squad squad)
@@ -299,7 +357,7 @@ public sealed class SquadAIController : MonoBehaviour
             {
                 case SquadRole.Attack:
                 case SquadRole.Support:
-                    return point.captureProgress < 100f;
+                    return point.captureProgress < 100f || GetRecoveryState(squad) == SquadRecoveryState.Recovering;
 
                 case SquadRole.Reserve:
                     return point.captureProgress >= 100f || !AnyCapturedPoint(activePoints);
@@ -315,7 +373,7 @@ public sealed class SquadAIController : MonoBehaviour
         {
             case SquadRole.Defend:
             case SquadRole.Support:
-                return threatened || !AnyThreatenedPoint(activePoints);
+                return threatened || !AnyThreatenedPoint(activePoints) || GetRecoveryState(squad) == SquadRecoveryState.Recovering;
 
             case SquadRole.Reserve:
                 return !threatened || !AnySecurePoint(activePoints);
@@ -410,6 +468,7 @@ public sealed class SquadAIController : MonoBehaviour
         }
 
         ApplySquadStrengthScoring(ref score, squad, point, isAttacker);
+        ApplyRecoveryScoring(ref score, squad, point, isAttacker);
 
         int squadsAlreadyAssigned = CountOtherSquadsAssignedTo(point.transform, squad);
         score -= squadsAlreadyAssigned * objectiveCrowdingPenalty;
@@ -458,6 +517,50 @@ public sealed class SquadAIController : MonoBehaviour
             float friendlyControl = Mathf.InverseLerp(100f, -100f, point.captureProgress);
             score += friendlyControl * 100f * reducedSquadControlBias;
         }
+    }
+
+    private void ApplyRecoveryScoring(ref float score, Squad squad, CapturePoint point, bool isAttacker)
+    {
+        if (GetRecoveryState(squad) != SquadRecoveryState.Recovering) return;
+
+        SquadStrengthState strength = GetStrengthState(squad);
+        int friendlyCount = isAttacker ? point.attackerCount : point.defenderCount;
+        int enemyCount = isAttacker ? point.defenderCount : point.attackerCount;
+
+        bool friendlyControlled = isAttacker
+            ? point.captureProgress >= 100f
+            : point.captureProgress <= -99.9f && point.attackerCount == 0;
+
+        bool contested = enemyCount > 0 || (isAttacker && point.captureProgress < 100f) || (!isAttacker && IsThreatened(point));
+
+        if (friendlyControlled)
+        {
+            score += strength == SquadStrengthState.Critical
+                ? criticalRecoverySafeBonus
+                : depletedRecoverySafeBonus;
+        }
+
+        if (contested)
+        {
+            score -= recoveryContestedPenalty;
+        }
+
+        score += friendlyCount * recoveryFriendlyPresenceBonus;
+
+        Transform reinforcementOrigin = GetReinforcementOrigin(isAttacker);
+        if (reinforcementOrigin != null)
+        {
+            float depth = Vector3.Distance(reinforcementOrigin.position, point.transform.position);
+            score -= depth * recoveryDepthPenalty;
+        }
+    }
+
+    private Transform GetReinforcementOrigin(bool isAttacker)
+    {
+        if (GameManager.Instance == null) return null;
+
+        UnitSpawner spawner = isAttacker ? GameManager.Instance.attackerSpawner : GameManager.Instance.defenderSpawner;
+        return spawner != null ? spawner.transform : null;
     }
 
     private int CountOtherSquadsAssignedTo(Transform target, Squad requestingSquad)
