@@ -56,6 +56,12 @@ public sealed class AutoTestTelemetry : MonoBehaviour
         host.AddComponent<AutoTestTelemetry>();
     }
 
+    public static void RecordMatchCompleted(string winner, float duration)
+    {
+        if (instance == null) return;
+        instance.RecordCompletedMatch(winner, duration);
+    }
+
     private void Awake()
     {
         if (instance != null && instance != this)
@@ -111,11 +117,6 @@ public sealed class AutoTestTelemetry : MonoBehaviour
         if (instance == this)
         {
             instance = null;
-        }
-
-        if (!matchRecorded && gameManager != null && gameManager.enableAutoTestMode)
-        {
-            TryRecordCompletedMatch();
         }
     }
 
@@ -215,19 +216,17 @@ public sealed class AutoTestTelemetry : MonoBehaviour
         }
     }
 
-    private void TryRecordCompletedMatch()
+    private void RecordCompletedMatch(string winner, float duration)
     {
-        string winner = InferWinner();
-        if (string.IsNullOrEmpty(winner)) return;
+        if (matchRecorded || gameManager == null) return;
+
+        TrackSectorProgress();
 
         if (winner == "Attackers" && gameManager.sectors != null && gameManager.sectors.Length > 0)
         {
             int finalSector = gameManager.sectors.Length - 1;
             EnsureSectorCapacity(finalSector);
-            if (sectorCaptureTimes[finalSector] <= 0f)
-            {
-                sectorCaptureTimes[finalSector] = GetElapsedTime();
-            }
+            sectorCaptureTimes[finalSector] = Mathf.Max(duration, GetElapsedTime());
             maxSectorReached = Mathf.Max(maxSectorReached, finalSector);
         }
 
@@ -238,53 +237,18 @@ public sealed class AutoTestTelemetry : MonoBehaviour
 
         if (logPerMatchSummary)
         {
-            AppendMatchSummary(winner);
+            AppendMatchSummary(winner, duration);
         }
 
         matchRecorded = true;
     }
 
-    private string InferWinner()
-    {
-        if (gameManager.attackerTickets <= 0)
-        {
-            return "Defenders";
-        }
-
-        if (gameManager.sectors == null || gameManager.sectors.Length == 0)
-        {
-            return null;
-        }
-
-        int finalSectorIndex = gameManager.sectors.Length - 1;
-        if (gameManager.currentSectorIndex != finalSectorIndex)
-        {
-            return null;
-        }
-
-        Sector finalSector = gameManager.sectors[finalSectorIndex];
-        if (finalSector == null || finalSector.capturePoints == null || finalSector.capturePoints.Length == 0)
-        {
-            return null;
-        }
-
-        foreach (CapturePoint point in finalSector.capturePoints)
-        {
-            if (point == null || point.captureProgress < 99.99f)
-            {
-                return null;
-            }
-        }
-
-        return "Attackers";
-    }
-
-    private void AppendMatchSummary(string winner)
+    private void AppendMatchSummary(string winner, float duration)
     {
         string path = Path.Combine(Application.dataPath, matchSummaryFileName);
         bool writeHeader = !File.Exists(path) || new FileInfo(path).Length == 0;
 
-        float elapsed = GetElapsedTime();
+        float elapsed = Mathf.Max(duration, GetElapsedTime());
         float avgAttackerLife = gameManager.attackerDeaths > 0
             ? gameManager.attackerTotalLifespan / gameManager.attackerDeaths
             : 0f;
