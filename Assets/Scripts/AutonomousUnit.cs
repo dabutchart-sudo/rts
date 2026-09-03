@@ -68,7 +68,7 @@ public class AutonomousUnit : MonoBehaviour
 
         if (!hasDirectOrder && useStrategicAI)
         {
-            Transform target = GameManager.Instance.GetCurrentTarget(gameObject, isAttacker);
+            Transform target = GetAIObjective();
             if (target != currentObjective)
             {
                 currentObjective = target;
@@ -166,7 +166,7 @@ public class AutonomousUnit : MonoBehaviour
             return;
         }
 
-        Transform target = GameManager.Instance.GetCurrentTarget(gameObject, isAttacker);
+        Transform target = GetAIObjective();
 
         if (target != null && agent.isOnNavMesh)
         {
@@ -179,6 +179,17 @@ public class AutonomousUnit : MonoBehaviour
             currentObjective = null;
             agent.ResetPath();
         }
+    }
+
+    private Transform GetAIObjective()
+    {
+        SquadAIController controller = SquadAIController.EnsureInstance();
+        if (controller != null)
+        {
+            return controller.GetStrategicTarget(gameObject, isAttacker);
+        }
+
+        return GameManager.Instance != null ? GameManager.Instance.GetCurrentTarget(gameObject, isAttacker) : null;
     }
 
     public void OrderRetreat(Transform retreatPoint)
