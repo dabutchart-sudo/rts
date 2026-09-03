@@ -8,11 +8,11 @@ public class SelectionManager : MonoBehaviour
     public static SelectionManager Instance;
 
     [Header("Visuals")]
-    public GameObject waypointPrefab; 
+    public GameObject waypointPrefab;
 
     [Header("UI References")]
     public RectTransform selectionBox;
-    private Canvas parentCanvas; 
+    private Canvas parentCanvas;
 
     [Header("Selection Settings")]
     [Tooltip("How many pixels the mouse must move before a click turns into a drag box.")]
@@ -38,9 +38,20 @@ public class SelectionManager : MonoBehaviour
             parentCanvas = selectionBox.GetComponentInParent<Canvas>();
             Image boxImage = selectionBox.GetComponent<Image>();
             if (boxImage != null) boxImage.enabled = true;
-            
-            // Ensure the box is hidden at the start
             selectionBox.gameObject.SetActive(false);
+        }
+
+        if (ControlModeManager.Instance != null)
+        {
+            ControlModeManager.Instance.ModeChanged += HandleControlModeChanged;
+        }
+    }
+
+    void OnDestroy()
+    {
+        if (ControlModeManager.Instance != null)
+        {
+            ControlModeManager.Instance.ModeChanged -= HandleControlModeChanged;
         }
     }
 
@@ -49,7 +60,12 @@ public class SelectionManager : MonoBehaviour
         if (GameManager.Instance == null || GameManager.Instance.playerFaction == Faction.None) return;
         if (Mouse.current == null) return;
 
-        // Block clicks if pointer is over UI elements
+        if (ControlModeManager.Instance != null && !ControlModeManager.Instance.CanPlayerSelectUnits())
+        {
+            if (selectedUnits.Count > 0) ClearSelection();
+            return;
+        }
+
         if (UnityEngine.EventSystems.EventSystem.current != null && UnityEngine.EventSystems.EventSystem.current.IsPointerOverGameObject())
         {
             if (isDragging)
@@ -60,18 +76,16 @@ public class SelectionManager : MonoBehaviour
             return;
         }
 
-        // 1. Mouse Button Down: Record starting position
         if (Mouse.current.leftButton.wasPressedThisFrame)
         {
             startMousePos = Mouse.current.position.ReadValue();
             isDragging = true;
         }
 
-        // 2. Mouse Button Held: Check if we passed the drag threshold
         if (Mouse.current.leftButton.isPressed && isDragging)
         {
             Vector2 currentMousePos = Mouse.current.position.ReadValue();
-            
+
             if (Vector2.Distance(startMousePos, currentMousePos) > dragThreshold)
             {
                 if (selectionBox != null && !selectionBox.gameObject.activeSelf)
@@ -82,18 +96,16 @@ public class SelectionManager : MonoBehaviour
             }
         }
 
-        // 3. Mouse Button Up: Decide between Click or Box Selection
         if (Mouse.current.leftButton.wasReleasedThisFrame && isDragging)
         {
             isDragging = false;
             Vector2 currentMousePos = Mouse.current.position.ReadValue();
-            
+
             if (selectionBox != null)
             {
                 selectionBox.gameObject.SetActive(false);
             }
 
-            // If we dragged past the threshold, do a box selection. Otherwise, do a single click.
             if (Vector2.Distance(startMousePos, currentMousePos) > dragThreshold)
             {
                 SelectUnitsInBox();
@@ -104,10 +116,27 @@ public class SelectionManager : MonoBehaviour
             }
         }
 
-        // 4. Right Mouse Button: Issue Move Order
         if (Mouse.current.rightButton.wasPressedThisFrame && selectedUnits.Count > 0)
         {
-            IssueMoveOrder();
+            if (ControlModeManager.Instance == null || ControlModeManager.Instance.CanPlayerIssueOrders())
+            {
+                IssueMoveOrder();
+            }
+        }
+    }
+
+    private void HandleControlModeChanged(ControlMode mode)
+    {
+        if (mode == ControlMode.Auto)
+        {
+            ClearSelection();
+        }
+
+        foreach (SelectableUnit unit in allUnits)
+        {
+            if (unit == null) continue;
+            AutonomousUnit autonomousUnit = unit.GetComponent<AutonomousUnit>();
+            if (autonomousUnit != null) autonomousUnit.RefreshControlMode();
         }
     }
 
@@ -126,7 +155,6 @@ public class SelectionManager : MonoBehaviour
         );
     }
 
-    // Determine which tag is valid for selection based on the chosen faction
     private string GetValidSelectionTag()
     {
         if (GameManager.Instance != null && GameManager.Instance.playerFaction == Faction.Defender)
@@ -136,7 +164,7 @@ public class SelectionManager : MonoBehaviour
         return "Attacker";
     }
 
-void SelectSingleUnit()
+    void SelectSingleUnit()
     {
         ClearSelection();
 
@@ -145,40 +173,37 @@ void SelectSingleUnit()
 
         if (Physics.Raycast(ray, out RaycastHit hit))
         {
-            // 1. Tell us exactly what the laser hit
-            Debug.Log($"🖱️ RAYCAST HIT: Object = {hit.collider.gameObject.name}, Tag = {hit.collider.tag}");
+            Debug.Log($"RAYCAST HIT: Object = {hit.collider.gameObject.name}, Tag = {hit.collider.tag}");
 
-            // 2. Use GetComponentInParent in case the raycast hits a child mesh instead of the root!
-            SelectableUnit clickedUnit = hit.collider.GetComponentInParent<SelectableUnit>(); 
-            
+            SelectableUnit clickedUnit = hit.collider.GetComponentInParent<SelectableUnit>();
+
             if (clickedUnit == null)
             {
-                Debug.LogWarning("❌ SELECTION FAILED: No 'SelectableUnit' script found on this object or its parent!");
+                Debug.LogWarning("SELECTION FAILED: No SelectableUnit script found on this object or its parent.");
                 return;
             }
 
-            // 3. Verify the tags
             string validTag = GetValidSelectionTag();
-            Debug.Log($"🛡️ FACTION CHECK: Player needs '{validTag}'. Clicked unit is '{clickedUnit.gameObject.tag}'.");
+            Debug.Log($"FACTION CHECK: Player needs '{validTag}'. Clicked unit is '{clickedUnit.gameObject.tag}'.");
 
             if (clickedUnit.gameObject.CompareTag(validTag))
             {
                 selectedUnits.Add(clickedUnit);
                 clickedUnit.SetSelected(true);
-                
+
                 RangeIndicator rangeIndicator = clickedUnit.GetComponent<RangeIndicator>();
                 if (rangeIndicator != null) rangeIndicator.Show();
-                
-                Debug.Log("✅ SELECTION SUCCESS!");
+
+                Debug.Log("SELECTION SUCCESS.");
             }
             else
             {
-                Debug.LogWarning("❌ SELECTION FAILED: Wrong faction tag!");
+                Debug.LogWarning("SELECTION FAILED: Wrong faction tag.");
             }
         }
         else
         {
-            Debug.Log("💨 RAYCAST MISSED: The mouse didn't hit any physical colliders.");
+            Debug.Log("RAYCAST MISSED: The mouse did not hit any physical colliders.");
         }
     }
 
@@ -199,8 +224,6 @@ void SelectSingleUnit()
         foreach (SelectableUnit unit in allUnits)
         {
             if (unit == null) continue;
-            
-            // Skip the unit if its tag doesn't match the player's chosen faction
             if (!unit.gameObject.CompareTag(validTag)) continue;
 
             Vector3 screenPos = Camera.main.WorldToScreenPoint(unit.transform.position);
@@ -209,7 +232,7 @@ void SelectSingleUnit()
             {
                 selectedUnits.Add(unit);
                 unit.SetSelected(true);
-                
+
                 RangeIndicator rangeIndicator = unit.GetComponent<RangeIndicator>();
                 if (rangeIndicator != null) rangeIndicator.Show();
             }
