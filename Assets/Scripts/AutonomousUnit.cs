@@ -8,10 +8,18 @@ public class AutonomousUnit : MonoBehaviour
     private Transform currentObjective;
     private bool isAttacker;
     private bool hasDirectOrder = false;
+    private bool isRegrouping = false;
+    private float nextCohesionCheckTime = 0f;
 
     [Header("AI Squad Movement")]
     [SerializeField] private float aiSquadSpacing = 2.2f;
     [SerializeField] private float aiNavMeshSampleRadius = 2.5f;
+
+    [Header("AI Squad Cohesion")]
+    [SerializeField] private float maxSquadSeparation = 9f;
+    [SerializeField] private float regroupDistance = 5f;
+    [SerializeField] private float cohesionCheckInterval = 0.5f;
+    [SerializeField] private float regroupNavMeshSampleRadius = 2.5f;
 
     [Header("Movement Animation")]
     public bool isTank = false;
@@ -68,25 +76,35 @@ public class AutonomousUnit : MonoBehaviour
 
         if (!hasDirectOrder && useStrategicAI)
         {
-            Transform target = GetAIObjective();
-            if (target != currentObjective)
+            if (Time.time >= nextCohesionCheckTime)
             {
-                currentObjective = target;
-                ApplySquadOrderState(target);
+                nextCohesionCheckTime = Time.time + Mathf.Max(0.1f, cohesionCheckInterval);
+                UpdateSquadCohesion();
+            }
 
-                if (currentObjective != null && agent.enabled && agent.isOnNavMesh)
+            if (!isRegrouping)
+            {
+                Transform target = GetAIObjective();
+                if (target != currentObjective)
                 {
-                    agent.SetDestination(GetStrategicDestination(currentObjective));
-                }
-                else if (currentObjective == null && agent.enabled && agent.isOnNavMesh)
-                {
-                    agent.ResetPath();
+                    currentObjective = target;
+                    ApplySquadOrderState(target);
+
+                    if (currentObjective != null && agent.enabled && agent.isOnNavMesh)
+                    {
+                        agent.SetDestination(GetStrategicDestination(currentObjective));
+                    }
+                    else if (currentObjective == null && agent.enabled && agent.isOnNavMesh)
+                    {
+                        agent.ResetPath();
+                    }
                 }
             }
         }
         else if (!hasDirectOrder && !useStrategicAI)
         {
             currentObjective = null;
+            isRegrouping = false;
         }
         else if (hasDirectOrder && agent.enabled && agent.isOnNavMesh && !agent.pathPending && agent.remainingDistance <= agent.stoppingDistance)
         {
@@ -163,6 +181,7 @@ public class AutonomousUnit : MonoBehaviour
         {
             if (agent.isOnNavMesh) agent.ResetPath();
             currentObjective = null;
+            isRegrouping = false;
             return;
         }
 
@@ -192,6 +211,56 @@ public class AutonomousUnit : MonoBehaviour
         return GameManager.Instance != null ? GameManager.Instance.GetCurrentTarget(gameObject, isAttacker) : null;
     }
 
+    private void UpdateSquadCohesion()
+    {
+        if (agent == null || !agent.enabled || !agent.isOnNavMesh) return;
+
+        SquadMember squadMember = GetComponent<SquadMember>();
+        if (squadMember == null || squadMember.Squad == null || squadMember.Squad.MemberCount <= 1)
+        {
+            isRegrouping = false;
+            return;
+        }
+
+        Vector3 squadCentre = GetSquadCentre(squadMember.Squad);
+        float distanceFromSquad = Vector3.Distance(transform.position, squadCentre);
+
+        if (!isRegrouping && distanceFromSquad > maxSquadSeparation)
+        {
+            isRegrouping = true;
+            MoveTowardRegroupPoint(squadCentre);
+            return;
+        }
+
+        if (!isRegrouping) return;
+
+        if (distanceFromSquad <= regroupDistance)
+        {
+            isRegrouping = false;
+            if (currentObjective != null)
+            {
+                agent.SetDestination(GetStrategicDestination(currentObjective));
+            }
+            return;
+        }
+
+        MoveTowardRegroupPoint(squadCentre);
+    }
+
+    private void MoveTowardRegroupPoint(Vector3 squadCentre)
+    {
+        Vector3 desired = squadCentre;
+        if (NavMesh.SamplePosition(desired, out NavMeshHit hit, regroupNavMeshSampleRadius, NavMesh.AllAreas))
+        {
+            desired = hit.position;
+        }
+
+        if (IsPositionWithinActiveBounds(desired))
+        {
+            agent.SetDestination(desired);
+        }
+    }
+
     public void OrderRetreat(Transform retreatPoint)
     {
         if (agent == null)
@@ -202,6 +271,7 @@ public class AutonomousUnit : MonoBehaviour
         if (retreatPoint != null && agent != null && agent.enabled && agent.isOnNavMesh)
         {
             hasDirectOrder = true;
+            isRegrouping = false;
             currentObjective = retreatPoint;
 
             SquadMember squadMember = GetComponent<SquadMember>();
@@ -226,6 +296,7 @@ public class AutonomousUnit : MonoBehaviour
             if (IsPositionWithinActiveBounds(destination))
             {
                 hasDirectOrder = true;
+                isRegrouping = false;
                 currentObjective = null;
 
                 SquadMember squadMember = GetComponent<SquadMember>();
@@ -247,6 +318,8 @@ public class AutonomousUnit : MonoBehaviour
         }
 
         if (!IsPlayerControlledUnit()) return;
+
+        isRegrouping = false;
 
         if (ControlModeManager.Instance != null && ControlModeManager.Instance.CurrentMode == ControlMode.Auto)
         {
