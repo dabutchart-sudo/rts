@@ -79,6 +79,30 @@ public class Squad
         members.Remove(unit);
     }
 
+    public int CountClass(UnitClass unitClass)
+    {
+        RemoveMissingMembers();
+
+        int count = 0;
+        foreach (GameObject member in members)
+        {
+            if (member == null) continue;
+
+            UnitClassIdentity identity = member.GetComponent<UnitClassIdentity>();
+            if (identity != null && identity.Class == unitClass)
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    public string GetCompositionSummary()
+    {
+        return $"A{CountClass(UnitClass.Assault)} / E{CountClass(UnitClass.Engineer)} / R{CountClass(UnitClass.Recon)} / S{CountClass(UnitClass.Support)}";
+    }
+
     public void SetRole(SquadRole newRole)
     {
         if (role == newRole) return;
