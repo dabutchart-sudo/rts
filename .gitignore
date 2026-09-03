@@ -1,0 +1,31 @@
+# Unity generated folders
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Ll]ogs/
+UserSettings/
+
+# Builds
+[Bb]uild/
+[Bb]uilds/
+
+# IDE / generated project files
+*.csproj
+*.sln
+*.slnx
+*.user
+*.userprefs
+*.pidb
+*.booproj
+
+# macOS
+.DS_Store
+
+# Local project files
+Archive.zip
+Screenshots/
+ignore.conf
+
+# Local version control/editor settings
+.plastic/
+.vscode/
