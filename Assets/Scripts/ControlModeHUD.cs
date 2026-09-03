@@ -45,15 +45,32 @@ public class ControlModeHUD : MonoBehaviour
 
     private void BuildUI()
     {
-        GameObject canvasObject = GameObject.Find("Canvas_Gameplay");
-        if (canvasObject == null)
+        Canvas[] canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        Canvas gameplayCanvas = null;
+
+        foreach (Canvas canvas in canvases)
+        {
+            if (canvas != null && canvas.gameObject.name == "Canvas_Gameplay")
+            {
+                gameplayCanvas = canvas;
+                break;
+            }
+        }
+
+        if (gameplayCanvas == null)
         {
             Debug.LogWarning("ControlModeHUD: Canvas_Gameplay was not found.");
             return;
         }
 
+        Transform existingPanel = gameplayCanvas.transform.Find("ControlModePanel");
+        if (existingPanel != null)
+        {
+            Destroy(existingPanel.gameObject);
+        }
+
         GameObject panel = new GameObject("ControlModePanel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(HorizontalLayoutGroup));
-        panel.transform.SetParent(canvasObject.transform, false);
+        panel.transform.SetParent(gameplayCanvas.transform, false);
 
         RectTransform panelRect = panel.GetComponent<RectTransform>();
         panelRect.anchorMin = new Vector2(0.5f, 1f);
@@ -93,8 +110,8 @@ public class ControlModeHUD : MonoBehaviour
 
         ColorBlock colors = button.colors;
         colors.normalColor = Color.white;
-        colors.highlightedColor = new Color(1.08f, 1.08f, 1.08f, 1f);
-        colors.pressedColor = new Color(0.82f, 0.82f, 0.82f, 1f);
+        colors.highlightedColor = new Color(0.92f, 0.92f, 0.92f, 1f);
+        colors.pressedColor = new Color(0.78f, 0.78f, 0.78f, 1f);
         colors.selectedColor = Color.white;
         colors.disabledColor = new Color(0.5f, 0.5f, 0.5f, 0.5f);
         button.colors = colors;
@@ -144,12 +161,12 @@ public class ControlModeHUD : MonoBehaviour
 
     private void Refresh(ControlMode mode)
     {
-        SetButtonVisual(autoButton, autoText, mode == ControlMode.Auto);
-        SetButtonVisual(assistButton, assistText, mode == ControlMode.Assist);
-        SetButtonVisual(manualButton, manualText, mode == ControlMode.Manual);
+        SetButtonVisual(autoButton, autoText, "AUTO", mode == ControlMode.Auto);
+        SetButtonVisual(assistButton, assistText, "ASSIST", mode == ControlMode.Assist);
+        SetButtonVisual(manualButton, manualText, "MANUAL", mode == ControlMode.Manual);
     }
 
-    private void SetButtonVisual(Button button, TextMeshProUGUI text, bool selected)
+    private void SetButtonVisual(Button button, TextMeshProUGUI text, string label, bool selected)
     {
         if (button == null) return;
 
@@ -161,7 +178,7 @@ public class ControlModeHUD : MonoBehaviour
 
         if (text != null)
         {
-            text.text = selected ? $"> {text.name.Replace("Label", string.Empty)}" : text.text;
+            text.text = selected ? $"● {label}" : label;
         }
     }
 }
