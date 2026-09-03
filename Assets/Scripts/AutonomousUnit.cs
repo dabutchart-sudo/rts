@@ -11,7 +11,7 @@ public class AutonomousUnit : MonoBehaviour
 
     [Header("Movement Animation")]
     public bool isTank = false;
-    public Transform visualTransform; 
+    public Transform visualTransform;
     public float wobbleSpeed = 14f;
     public float wobbleAngle = 8f;
     public float bobAmount = 0.06f;
@@ -31,7 +31,7 @@ public class AutonomousUnit : MonoBehaviour
     void Start()
     {
         agent = GetComponent<NavMeshAgent>();
-        
+
         if (CompareTag("Attacker")) isAttacker = true;
         else if (CompareTag("Defender")) isAttacker = false;
 
@@ -60,7 +60,9 @@ public class AutonomousUnit : MonoBehaviour
     {
         if (GameManager.Instance == null) return;
 
-        if (!hasDirectOrder)
+        bool useStrategicAI = ControlModeManager.Instance == null || ControlModeManager.Instance.ShouldUseStrategicAI(gameObject);
+
+        if (!hasDirectOrder && useStrategicAI)
         {
             Transform target = GameManager.Instance.GetCurrentTarget(gameObject, isAttacker);
             if (target != currentObjective)
@@ -72,13 +74,25 @@ public class AutonomousUnit : MonoBehaviour
                 }
                 else if (currentObjective == null && agent.enabled && agent.isOnNavMesh)
                 {
-                    agent.ResetPath(); 
+                    agent.ResetPath();
                 }
             }
         }
+        else if (!hasDirectOrder && !useStrategicAI)
+        {
+            currentObjective = null;
+        }
         else if (hasDirectOrder && agent.enabled && agent.isOnNavMesh && !agent.pathPending && agent.remainingDistance <= agent.stoppingDistance)
         {
-            hasDirectOrder = false;
+            bool temporaryOrder = ControlModeManager.Instance == null || ControlModeManager.Instance.PlayerOrdersAreTemporary();
+            if (temporaryOrder || !IsPlayerControlledUnit())
+            {
+                hasDirectOrder = false;
+            }
+            else
+            {
+                agent.ResetPath();
+            }
         }
 
         CheckSectorBounds();
@@ -131,28 +145,38 @@ public class AutonomousUnit : MonoBehaviour
     {
         if (GameManager.Instance == null) return;
 
-        if (agent == null) 
+        if (agent == null)
         {
             agent = GetComponent<NavMeshAgent>();
         }
 
         if (agent == null || !agent.isActiveAndEnabled) return;
 
+        bool useStrategicAI = ControlModeManager.Instance == null || ControlModeManager.Instance.ShouldUseStrategicAI(gameObject);
+        if (!useStrategicAI)
+        {
+            if (agent.isOnNavMesh) agent.ResetPath();
+            currentObjective = null;
+            return;
+        }
+
         Transform target = GameManager.Instance.GetCurrentTarget(gameObject, isAttacker);
 
         if (target != null && agent.isOnNavMesh)
         {
+            currentObjective = target;
             agent.SetDestination(target.position);
         }
         else if (agent.isOnNavMesh)
         {
-            agent.ResetPath(); 
+            currentObjective = null;
+            agent.ResetPath();
         }
     }
 
     public void OrderRetreat(Transform retreatPoint)
     {
-        if (agent == null) 
+        if (agent == null)
         {
             agent = GetComponent<NavMeshAgent>();
         }
@@ -167,6 +191,11 @@ public class AutonomousUnit : MonoBehaviour
 
     public void MoveToDirectOrder(Vector3 destination)
     {
+        if (agent == null)
+        {
+            agent = GetComponent<NavMeshAgent>();
+        }
+
         if (agent != null && agent.enabled && agent.isOnNavMesh)
         {
             if (IsPositionWithinActiveBounds(destination))
@@ -178,11 +207,38 @@ public class AutonomousUnit : MonoBehaviour
         }
     }
 
+    public void RefreshControlMode()
+    {
+        if (agent == null)
+        {
+            agent = GetComponent<NavMeshAgent>();
+        }
+
+        if (!IsPlayerControlledUnit()) return;
+
+        if (ControlModeManager.Instance != null && ControlModeManager.Instance.CurrentMode == ControlMode.Auto)
+        {
+            hasDirectOrder = false;
+            UpdateDestination();
+        }
+        else if (ControlModeManager.Instance != null && ControlModeManager.Instance.CurrentMode == ControlMode.Manual)
+        {
+            hasDirectOrder = false;
+            currentObjective = null;
+            if (agent != null && agent.enabled && agent.isOnNavMesh) agent.ResetPath();
+        }
+    }
+
+    private bool IsPlayerControlledUnit()
+    {
+        return ControlModeManager.Instance != null && ControlModeManager.Instance.IsPlayerFaction(gameObject);
+    }
+
     private bool IsPositionWithinActiveBounds(Vector3 pos)
     {
         if (GameManager.Instance == null || GameManager.Instance.sectors == null) return true;
-        
-        if (GameManager.Instance.isTransitioningSector) return true; 
+
+        if (GameManager.Instance.isTransitioningSector) return true;
 
         int activeIndex = GameManager.Instance.currentSectorIndex;
         if (activeIndex >= 0 && activeIndex < GameManager.Instance.sectors.Length)
@@ -193,13 +249,13 @@ public class AutonomousUnit : MonoBehaviour
                 return activeSector.sectorBounds.Contains(pos);
             }
         }
-        return true; 
+        return true;
     }
 
     private void CheckSectorBounds()
     {
         if (GameManager.Instance == null || GameManager.Instance.sectors == null) return;
-        
+
         if (GameManager.Instance.isTransitioningSector) return;
 
         int activeIndex = GameManager.Instance.currentSectorIndex;
@@ -212,7 +268,7 @@ public class AutonomousUnit : MonoBehaviour
             if (!activeSector.sectorBounds.Contains(transform.position))
             {
                 Vector3 clampedPos = activeSector.sectorBounds.ClosestPoint(transform.position);
-                
+
                 if (agent.enabled)
                 {
                     agent.Warp(clampedPos);
