@@ -7,14 +7,18 @@ public class UnitSpawner : MonoBehaviour
     public GameObject assaultPrefab;
     public int initialSpawnCount = 15;
 
+    [Header("Assault Population Caps")]
+    [Tooltip("Maximum number of attacker Assault units alive at once.")]
+    [Min(1)] public int attackerAssaultPopulationCap = 16;
+
+    [Tooltip("Maximum number of defender Assault units alive at once.")]
+    [Min(1)] public int defenderAssaultPopulationCap = 16;
+
     [Header("Reinforcements")]
     public float attackerRespawnDelay = 5f;
 
     [Tooltip("How often the defender spawner checks whether Assault reinforcements are needed.")]
     public float defenderAutoSpawnInterval = 10f;
-
-    [Tooltip("Maximum number of defender Assault units that one defender spawner will maintain alive at once.")]
-    [Min(1)] public int defenderAssaultPopulationCap = 16;
 
     [Tooltip("Maximum number of defender Assault units added during one reinforcement check.")]
     [Min(1)] public int defenderWaveSize = 5;
@@ -32,44 +36,28 @@ public class UnitSpawner : MonoBehaviour
         if (hasSpawned) return;
         hasSpawned = true;
 
+        int target = isDefenderSpawner ? GetDefenderAssaultCap() : GetAttackerAssaultCap();
+        int spawned = SpawnAssaultsUpToLimit(target, false);
         string teamName = isDefenderSpawner ? "Defenders" : "Attackers";
 
-        Debug.Log($"🔢 SPAWN COUNT CHECK: Spawning {initialSpawnCount} units for {teamName}...");
-
-        if (isDefenderSpawner)
-        {
-            SpawnDefenderAssaultsUpToLimit(initialSpawnCount);
-            return;
-        }
-
-        for (int i = 0; i < initialSpawnCount; i++)
-        {
-            SpawnSingleUnit();
-        }
+        Debug.Log($"🔢 SPAWN COUNT CHECK: Deployed {spawned} Assaults for {teamName}; target population {target}.");
     }
 
     public void SpawnWave(int count)
     {
         if (count <= 0) return;
 
-        if (isDefenderSpawner)
-        {
-            int spawned = SpawnDefenderAssaultsUpToLimit(count);
-            Debug.Log($"🌊 DEFENDER REINFORCEMENT: Requested {count}, deployed {spawned}, alive Assaults {GetAliveDefenderAssaultCount()}/{GetDefenderAssaultCap()}.");
-            return;
-        }
+        int spawned = SpawnAssaultsUpToLimit(count, false);
+        int alive = GetAliveAssaultCount();
+        int cap = isDefenderSpawner ? GetDefenderAssaultCap() : GetAttackerAssaultCap();
+        string teamName = isDefenderSpawner ? "DEFENDER" : "ATTACKER";
 
-        Debug.Log($"🌊 SPAWN WAVE: Deploying {count} reinforcements!");
-        for (int i = 0; i < count; i++)
-        {
-            SpawnSingleUnit();
-        }
+        Debug.Log($"🌊 {teamName} REINFORCEMENT: Requested {count}, deployed {spawned}, alive Assaults {alive}/{cap}.");
     }
 
     void Update()
     {
         if (!hasSpawned) return;
-
         if (GameManager.Instance != null && GameManager.Instance.isTransitioningSector) return;
 
         if (isDefenderSpawner)
@@ -78,7 +66,7 @@ public class UnitSpawner : MonoBehaviour
             if (defenderTimer >= defenderAutoSpawnInterval)
             {
                 defenderTimer = 0f;
-                SpawnDefenderAssaultsUpToLimit(defenderWaveSize);
+                SpawnAssaultsUpToLimit(defenderWaveSize, true);
             }
         }
     }
@@ -91,27 +79,28 @@ public class UnitSpawner : MonoBehaviour
 
     void SpawnAssaultDelayed()
     {
-        if (GameManager.Instance != null && GameManager.Instance.SpendTickets(true, 1))
-        {
-            SpawnSingleUnit();
-        }
+        SpawnAssaultsUpToLimit(1, true);
     }
 
-    private int SpawnDefenderAssaultsUpToLimit(int requestedCount)
+    private int SpawnAssaultsUpToLimit(int requestedCount, bool spendTicket)
     {
-        if (!isDefenderSpawner || requestedCount <= 0) return 0;
+        if (requestedCount <= 0) return 0;
 
-        int cap = GetDefenderAssaultCap();
-        int alive = GetAliveDefenderAssaultCount();
+        int cap = isDefenderSpawner ? GetDefenderAssaultCap() : GetAttackerAssaultCap();
+        int alive = GetAliveAssaultCount();
         int availableSlots = Mathf.Max(0, cap - alive);
         int unitsToSpawn = Mathf.Min(requestedCount, availableSlots);
 
         int spawned = 0;
         for (int i = 0; i < unitsToSpawn; i++)
         {
-            if (GameManager.Instance != null && !GameManager.Instance.SpendTickets(false, 1))
+            if (spendTicket && GameManager.Instance != null)
             {
-                break;
+                bool isAttacker = !isDefenderSpawner;
+                if (!GameManager.Instance.SpendTickets(isAttacker, 1))
+                {
+                    break;
+                }
             }
 
             SpawnSingleUnit();
@@ -121,22 +110,34 @@ public class UnitSpawner : MonoBehaviour
         return spawned;
     }
 
-    private int GetDefenderAssaultCap()
+    public int GetAttackerAssaultCap()
+    {
+        return Mathf.Max(1, attackerAssaultPopulationCap);
+    }
+
+    public int GetDefenderAssaultCap()
     {
         return Mathf.Max(1, defenderAssaultPopulationCap);
     }
 
-    private int GetAliveDefenderAssaultCount()
+    public int GetAliveAssaultCount()
     {
-        GameObject[] defenders = GameObject.FindGameObjectsWithTag("Defender");
+        string factionTag = isDefenderSpawner ? "Defender" : "Attacker";
+        GameObject[] units = GameObject.FindGameObjectsWithTag(factionTag);
         int count = 0;
 
-        foreach (GameObject defender in defenders)
+        foreach (GameObject unit in units)
         {
-            if (defender == null) continue;
+            if (unit == null) continue;
 
-            UnitClassIdentity identity = defender.GetComponent<UnitClassIdentity>();
-            if (identity == null || identity.Class == UnitClass.Assault)
+            UnitCategoryIdentity categoryIdentity = unit.GetComponent<UnitCategoryIdentity>();
+            if (categoryIdentity != null && categoryIdentity.Category != UnitCategory.Infantry)
+            {
+                continue;
+            }
+
+            UnitClassIdentity classIdentity = unit.GetComponent<UnitClassIdentity>();
+            if (classIdentity != null && classIdentity.Class == UnitClass.Assault)
             {
                 count++;
             }
@@ -151,7 +152,9 @@ public class UnitSpawner : MonoBehaviour
 
         Vector3 spawnPos = transform.position;
 
-        if (GameManager.Instance != null && GameManager.Instance.sectors != null && GameManager.Instance.sectors.Length > GameManager.Instance.currentSectorIndex)
+        if (GameManager.Instance != null &&
+            GameManager.Instance.sectors != null &&
+            GameManager.Instance.sectors.Length > GameManager.Instance.currentSectorIndex)
         {
             Sector currentSector = GameManager.Instance.sectors[GameManager.Instance.currentSectorIndex];
 
@@ -167,12 +170,9 @@ public class UnitSpawner : MonoBehaviour
                     spawnPos.y = currentSector.attackerBase.spawnPoint.position.y;
                 }
             }
-            else
+            else if (currentSector.attackerBase != null && currentSector.attackerBase.spawnPoint != null)
             {
-                if (currentSector.attackerBase != null && currentSector.attackerBase.spawnPoint != null)
-                {
-                    spawnPos = currentSector.attackerBase.spawnPoint.position;
-                }
+                spawnPos = currentSector.attackerBase.spawnPoint.position;
             }
         }
 
@@ -180,6 +180,7 @@ public class UnitSpawner : MonoBehaviour
         Vector3 finalPos = spawnPos + new Vector3(randomOffset.x, 0, randomOffset.y);
         GameObject spawnedUnit = Instantiate(assaultPrefab, finalPos, Quaternion.identity);
 
+        UnitCategoryIdentity.Ensure(spawnedUnit, UnitCategory.Infantry);
         UnitClassIdentity.Ensure(spawnedUnit, UnitClass.Assault);
 
         SquadManager squadManager = SquadManager.EnsureInstance();
