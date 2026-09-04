@@ -35,7 +35,7 @@ public class AICommander : MonoBehaviour
     private struct PurchaseOption
     {
         public PurchasableUnit unit;
-        public CapturePoint sourceBase;
+        public SpawnSource source;
     }
 
     void Update()
@@ -65,58 +65,45 @@ public class AICommander : MonoBehaviour
 
     private void MakeTacticalPurchase()
     {
-        if (GameManager.Instance.sectors == null ||
-            GameManager.Instance.currentSectorIndex < 0 ||
-            GameManager.Instance.currentSectorIndex >= GameManager.Instance.sectors.Length)
-        {
-            return;
-        }
-
-        Sector currentSector = GameManager.Instance.sectors[GameManager.Instance.currentSectorIndex];
-        List<PurchaseOption> affordableOptions = BuildAffordableOptions(currentSector);
-
+        List<PurchaseOption> affordableOptions = BuildAffordableOptions();
         if (affordableOptions.Count == 0) return;
 
         if (prioritiseInitialSpecialistMix && TryChooseMissingSpecialist(affordableOptions, out PurchaseOption specialistChoice))
         {
-            ExecutePurchase(specialistChoice.unit, specialistChoice.sourceBase);
+            ExecutePurchase(specialistChoice);
             return;
         }
 
         int randomIndex = Random.Range(0, affordableOptions.Count);
-        PurchaseOption chosenOption = affordableOptions[randomIndex];
-        ExecutePurchase(chosenOption.unit, chosenOption.sourceBase);
+        ExecutePurchase(affordableOptions[randomIndex]);
     }
 
-    private List<PurchaseOption> BuildAffordableOptions(Sector currentSector)
+    private List<PurchaseOption> BuildAffordableOptions()
     {
         List<PurchaseOption> affordableOptions = new List<PurchaseOption>();
+        List<PurchasableUnit> catalog = SpawnSourceResolver.GetCurrentSectorCatalog(aiFaction);
+        List<SpawnSource> availableSources = SpawnSourceResolver.GetCurrentSectorSources(aiFaction, true);
 
-        if (currentSector == null || currentSector.capturePoints == null)
+        if (catalog.Count == 0 || availableSources.Count == 0)
         {
             return affordableOptions;
         }
 
-        foreach (CapturePoint cp in currentSector.capturePoints)
+        SpawnSource preferredSource = SpawnSourceResolver.ChooseBestAISource(aiFaction, availableSources);
+        if (preferredSource == null) return affordableOptions;
+
+        foreach (PurchasableUnit unit in catalog)
         {
-            if (cp == null || !cp.IsControlledBy(aiFaction)) continue;
+            if (unit == null || unit.unitPrefab == null) continue;
+            if (aiCommandXP < unit.xpCost) continue;
+            if (!IsPurchaseCategoryAllowed(unit)) continue;
+            if (!IsWithinSpecialistDeploymentLimit(unit)) continue;
 
-            PurchasableUnit[] availableUnits = cp.GetAvailableUnits(aiFaction);
-            if (availableUnits == null) continue;
-
-            foreach (PurchasableUnit unit in availableUnits)
+            affordableOptions.Add(new PurchaseOption
             {
-                if (unit == null || unit.unitPrefab == null) continue;
-                if (aiCommandXP < unit.xpCost) continue;
-                if (!IsPurchaseCategoryAllowed(unit)) continue;
-                if (!IsWithinSpecialistDeploymentLimit(unit)) continue;
-
-                affordableOptions.Add(new PurchaseOption
-                {
-                    unit = unit,
-                    sourceBase = cp
-                });
-            }
+                unit = unit,
+                source = preferredSource
+            });
         }
 
         return affordableOptions;
@@ -146,8 +133,6 @@ public class AICommander : MonoBehaviour
 
         if (missingSpecialists.Count == 0) return false;
 
-        // Prefer the cheapest missing specialist so the AI establishes a balanced specialist
-        // presence as early as possible instead of waiting for a more expensive option.
         int bestCost = int.MaxValue;
         List<PurchaseOption> cheapestMissing = new List<PurchaseOption>();
 
@@ -209,9 +194,12 @@ public class AICommander : MonoBehaviour
         return tracker == null || tracker.CanDeploy(aiFaction, unitClass);
     }
 
-    private void ExecutePurchase(PurchasableUnit unit, CapturePoint sourceBase)
+    private void ExecutePurchase(PurchaseOption option)
     {
-        if (unit == null || sourceBase == null || unit.unitPrefab == null) return;
+        PurchasableUnit unit = option.unit;
+        SpawnSource source = option.source;
+
+        if (unit == null || source == null || unit.unitPrefab == null || !source.IsAvailable()) return;
 
         UnitClass resolvedClass = UnitClass.Assault;
         bool isSpecialist = unit.GetResolvedCategory() == UnitCategory.Infantry &&
@@ -227,12 +215,14 @@ public class AICommander : MonoBehaviour
             }
         }
 
+        Transform spawnLocation = source.GetNextSpawnTransform();
+        if (spawnLocation == null) return;
+
         aiCommandXP -= unit.xpCost;
-        Transform spawnLocation = sourceBase.GetNextAvailableSpawnPoint();
         GameObject spawnedUnit = Instantiate(unit.unitPrefab, spawnLocation.position, spawnLocation.rotation);
         RegisterPurchasedUnit(spawnedUnit, unit);
 
-        Debug.Log($"🤖 AI COMMANDER ({aiFaction}): Deployed {unit.unitDisplayName} at {sourceBase.capturePointName}! Remaining XP: {aiCommandXP}");
+        Debug.Log($"🤖 AI COMMANDER ({aiFaction}): Deployed {unit.unitDisplayName} at {source.DisplayName}! Remaining XP: {aiCommandXP}");
     }
 
     private void RegisterPurchasedUnit(GameObject spawnedUnit, PurchasableUnit unit)
