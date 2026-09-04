@@ -19,9 +19,9 @@ public class BaseZone : MonoBehaviour
 
     [Header("Ground Marker")]
     [SerializeField] private float markerHeight = 0.18f;
-    [Tooltip("Designed to render roughly twice the current capture-point text size.")]
-    [SerializeField] private float markerScale = 0.04f;
-    [SerializeField] private float markerFontSize = 36f;
+    [Tooltip("Large single-letter frontline-base marker for medium/high zoom readability.")]
+    [SerializeField] private float markerScale = 0.08f;
+    [SerializeField] private float markerFontSize = 48f;
 
     private LineRenderer lineRenderer;
     private TextMeshPro groundMarker;
