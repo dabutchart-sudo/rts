@@ -46,8 +46,8 @@ public class UIManager : MonoBehaviour
             int defXP = GameManager.Instance.defenderXP;
             Faction playerFaction = GameManager.Instance.playerFaction;
 
-            string attackerYou = playerFaction == Faction.Attacker ? "  <size=75%><b>◀ YOU</b></size>" : string.Empty;
-            string defenderYou = playerFaction == Faction.Defender ? "  <size=75%><b>◀ YOU</b></size>" : string.Empty;
+            string attackerYou = playerFaction == Faction.Attacker ? "  <size=75%><b>[YOU]</b></size>" : string.Empty;
+            string defenderYou = playerFaction == Faction.Defender ? "  <size=75%><b>[YOU]</b></size>" : string.Empty;
 
             statsText.text =
                 $"<color=#5A9BD5><b>ATTACKERS</b>{attackerYou}</color>\n" +
