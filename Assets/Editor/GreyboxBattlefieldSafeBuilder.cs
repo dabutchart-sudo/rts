@@ -7,10 +7,11 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Safe wrapper around GreyboxBattlefieldBuilder.
-/// The original builder saved SampleScene as a copy before generating geometry, which meant
-/// the generated map was accidentally authored into SampleScene. This wrapper first performs
-/// a real Save As to GreyboxBattlefield01, then invokes the existing geometry helpers there.
+/// Reproducible build pipeline for Greybox Battlefield 01.
+/// The finished map scene is generated from the clean SampleScene baseline, then gameplay
+/// wiring, readability cleanup and serialized-reference repair are applied before saving.
+/// This keeps the authored map reproducible while still allowing the generated .unity scene
+/// itself to be committed to source control as a normal project asset.
 /// </summary>
 public static class GreyboxBattlefieldSafeBuilder
 {
@@ -18,37 +19,37 @@ public static class GreyboxBattlefieldSafeBuilder
     private const string TargetScene = "Assets/Scenes/GreyboxBattlefield01.unity";
     private const string GeneratedRootName = "GreyboxBattlefield01_Generated";
 
-    [MenuItem("RTS/Maps/Build Greybox Battlefield 01 (Safe)")]
-    public static void BuildSafe()
+    [MenuItem("RTS/Maps/Rebuild Greybox Battlefield 01 (Complete)")]
+    public static void RebuildComplete()
     {
         if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
 
         Scene source = EditorSceneManager.OpenScene(SourceScene, OpenSceneMode.Single);
         if (!source.IsValid())
         {
-            Debug.LogError("SAFE MAP BUILD: Could not open SampleScene.");
+            Debug.LogError("COMPLETE MAP BUILD: Could not open SampleScene.");
             return;
         }
 
-        // Important: saveAsCopy=false makes the active scene become the new map scene.
+        RemoveAccidentalGeneratedMapFromSource(source);
+        EditorSceneManager.SaveScene(source);
+
+        // saveAsCopy=false is deliberate: the active scene becomes GreyboxBattlefield01.
         if (!EditorSceneManager.SaveScene(source, TargetScene, false))
         {
-            Debug.LogError("SAFE MAP BUILD: Could not create GreyboxBattlefield01 scene.");
+            Debug.LogError("COMPLETE MAP BUILD: Could not create GreyboxBattlefield01 scene.");
             return;
         }
 
         Scene target = SceneManager.GetActiveScene();
         if (!target.IsValid() || target.path != TargetScene)
         {
-            Debug.LogError($"SAFE MAP BUILD: Expected active scene '{TargetScene}', but got '{target.path}'.");
+            Debug.LogError($"COMPLETE MAP BUILD: Expected active scene '{TargetScene}', but got '{target.path}'.");
             return;
         }
 
         GameObject oldGeometry = GameObject.Find(GeneratedRootName);
-        if (oldGeometry != null)
-        {
-            UnityEngine.Object.DestroyImmediate(oldGeometry);
-        }
+        if (oldGeometry != null) UnityEngine.Object.DestroyImmediate(oldGeometry);
 
         GameObject root = new GameObject(GeneratedRootName);
 
@@ -62,18 +63,82 @@ public static class GreyboxBattlefieldSafeBuilder
             InvokeBuilder("CreateSectorThree", root.transform);
             InvokeBuilder("CreateRouteMarkers", root.transform);
             InvokeBuilder("EnsureSceneInBuildSettings", TargetScene);
+
+            EditorSceneManager.MarkSceneDirty(target);
+            EditorSceneManager.SaveScene(target);
+
+            // These are intentionally called through their public editor entry points so the
+            // same operations can still be run independently while debugging.
+            GreyboxBattlefieldGameplayWiring.WireForPlay();
+            GreyboxBattlefieldReadabilityPass.Apply();
+            GreyboxSpawnerReferenceRepair.Repair();
+
+            EditorSceneManager.MarkSceneDirty(target);
+            EditorSceneManager.SaveScene(target);
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
         }
         catch (Exception ex)
         {
-            Debug.LogError($"SAFE MAP BUILD: Failed while creating map geometry. {ex.Message}\n{ex.StackTrace}");
+            Debug.LogError($"COMPLETE MAP BUILD: Failed while creating the playable map. {ex.Message}\n{ex.StackTrace}");
             return;
         }
 
-        EditorSceneManager.MarkSceneDirty(target);
-        EditorSceneManager.SaveScene(target);
-        Selection.activeGameObject = root;
+        Selection.activeGameObject = GameObject.Find(GeneratedRootName);
 
-        Debug.Log("SAFE MAP BUILD: Greybox Battlefield 01 created in its own scene and is now active. Next run RTS > Maps > Wire Greybox Battlefield 01 for Play.");
+        Debug.Log(
+            "COMPLETE MAP BUILD: Greybox Battlefield 01 is fully rebuilt and saved. " +
+            "Geometry, 3 sectors, 6 objectives, bases, spawn references, readability pass and NavMesh are applied. " +
+            "IMPORTANT: commit Assets/Scenes/GreyboxBattlefield01.unity and its .meta file in GitHub Desktop so this tested map exists in source control.");
+    }
+
+    // Kept as a compatibility menu item because earlier instructions referred to it.
+    [MenuItem("RTS/Maps/Build Greybox Battlefield 01 (Safe)")]
+    public static void BuildSafe()
+    {
+        RebuildComplete();
+    }
+
+    [MenuItem("RTS/Maps/Clean Greybox Artifacts From SampleScene")]
+    public static void CleanSampleScene()
+    {
+        if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
+
+        Scene source = EditorSceneManager.OpenScene(SourceScene, OpenSceneMode.Single);
+        if (!source.IsValid())
+        {
+            Debug.LogError("MAP CLEANUP: Could not open SampleScene.");
+            return;
+        }
+
+        bool removed = RemoveAccidentalGeneratedMapFromSource(source);
+        if (removed)
+        {
+            EditorSceneManager.MarkSceneDirty(source);
+            EditorSceneManager.SaveScene(source);
+            Debug.Log("MAP CLEANUP: Removed GreyboxBattlefield01_Generated from SampleScene and saved the clean source scene.");
+        }
+        else
+        {
+            Debug.Log("MAP CLEANUP: SampleScene already contains no generated Greybox Battlefield root.");
+        }
+    }
+
+    private static bool RemoveAccidentalGeneratedMapFromSource(Scene source)
+    {
+        if (!source.IsValid()) return false;
+
+        bool removedAny = false;
+        foreach (GameObject rootObject in source.GetRootGameObjects())
+        {
+            if (rootObject != null && rootObject.name == GeneratedRootName)
+            {
+                UnityEngine.Object.DestroyImmediate(rootObject);
+                removedAny = true;
+            }
+        }
+
+        return removedAny;
     }
 
     private static void InvokeBuilder(string methodName, params object[] args)
