@@ -1,6 +1,6 @@
 using UnityEngine;
 using System.Collections.Generic;
-using TMPro; 
+using TMPro;
 
 // This class defines what units can be bought and how much they cost
 [System.Serializable]
@@ -9,20 +9,28 @@ public class PurchasableUnit
     public string unitDisplayName = "Heavy Tank";
     public GameObject unitPrefab;
     public int xpCost = 500;
-    public Sprite unitIcon; 
+    public Sprite unitIcon;
 }
 
 public class CapturePoint : MonoBehaviour
 {
     [Header("Capture Point Identity")]
     public string capturePointName = "A1";
-    public int activeDuringSectorIndex = 0; 
+    public int activeDuringSectorIndex = 0;
 
     [Header("Capture Settings")]
     [Range(-100f, 100f)]
-    public float captureProgress = -100f; 
+    public float captureProgress = -100f;
+
+    [Tooltip("Base capture progress per second before unit advantage and the overall rate multiplier are applied.")]
     public float captureSpeed = 15f;
+
+    [Tooltip("Maximum capture-speed multiplier produced by a numerical advantage inside the capture zone.")]
     public float maxCaptureMultiplier = 4f;
+
+    [Tooltip("Overall capture-rate tuning control. 0.33 makes the existing captureSpeed of 15 behave like roughly 5 progress per second before numerical advantage.")]
+    [Range(0.1f, 2f)]
+    public float captureRateMultiplier = 0.33f;
 
     [Header("Current Occupants")]
     public int attackerCount = 0;
@@ -30,18 +38,18 @@ public class CapturePoint : MonoBehaviour
     public bool isLocked = false;
 
     [Header("Team Colors")]
-    public Color attackerColor = Color.red;    
-    public Color defenderColor = Color.blue;   
+    public Color attackerColor = Color.red;
+    public Color defenderColor = Color.blue;
     public Color neutralColor = Color.gray;
 
     [Header("UI")]
-    public TextMeshProUGUI progressText; 
-    public float groundOffset = 0.15f; 
+    public TextMeshProUGUI progressText;
+    public float groundOffset = 0.15f;
 
     [Header("Base Production Capabilities")]
     [Tooltip("Units the Attacker can buy when they own this base")]
     public PurchasableUnit[] attackerPurchasables;
-    
+
     [Tooltip("Units the Defender can buy when they own this base")]
     public PurchasableUnit[] defenderPurchasables;
 
@@ -59,7 +67,7 @@ public class CapturePoint : MonoBehaviour
 
     void Awake()
     {
-        captureProgress = -100f; 
+        captureProgress = -100f;
         pointCollider = GetComponent<Collider>();
 
         if (progressText != null && progressText.transform.parent != null)
@@ -75,7 +83,7 @@ public class CapturePoint : MonoBehaviour
     public void ResetCapturePoint()
     {
         isLocked = false;
-        captureProgress = -100f; 
+        captureProgress = -100f;
         activeAttackers.Clear();
         activeDefenders.Clear();
         UpdatePointColor();
@@ -98,9 +106,9 @@ public class CapturePoint : MonoBehaviour
     {
         pointRenderer = GetComponent<Renderer>();
         if (pointCollider == null) pointCollider = GetComponent<Collider>();
-        
-        captureProgress = -100f; 
-        ResetCapturePoint(); 
+
+        captureProgress = -100f;
+        ResetCapturePoint();
 
         if (UIManager.Instance != null && GameManager.Instance != null && GameManager.Instance.currentSectorIndex == activeDuringSectorIndex)
         {
@@ -134,7 +142,7 @@ public class CapturePoint : MonoBehaviour
 
     void Update()
     {
-        UpdateFlatTextPosition(); 
+        UpdateFlatTextPosition();
 
         if (isLocked)
         {
@@ -167,10 +175,11 @@ public class CapturePoint : MonoBehaviour
             float advantage = Mathf.Abs(balance);
             float currentMultiplier = Mathf.Min(advantage, maxCaptureMultiplier);
             float direction = Mathf.Sign(balance);
-            
-            captureProgress += direction * currentMultiplier * captureSpeed * Time.deltaTime;
+            float effectiveCaptureSpeed = captureSpeed * Mathf.Max(0f, captureRateMultiplier);
+
+            captureProgress += direction * currentMultiplier * effectiveCaptureSpeed * Time.deltaTime;
             captureProgress = Mathf.Clamp(captureProgress, -100f, 100f);
-            
+
             UpdatePointColor();
             UpdateFloatingText();
         }
@@ -190,17 +199,17 @@ public class CapturePoint : MonoBehaviour
             return attackerPurchasables;
         if (playerFaction == Faction.Defender && captureProgress <= -100f)
             return defenderPurchasables;
-            
-        return new PurchasableUnit[0]; 
+
+        return new PurchasableUnit[0];
     }
 
     // The Store script will call this to get a safe location to drop the new unit
     public Transform GetNextAvailableSpawnPoint()
     {
-        if (purchaseSpawnPoints == null || purchaseSpawnPoints.Length == 0) return transform; 
+        if (purchaseSpawnPoints == null || purchaseSpawnPoints.Length == 0) return transform;
 
         Transform spawnPoint = purchaseSpawnPoints[nextSpawnIndex];
-        
+
         nextSpawnIndex++;
         if (nextSpawnIndex >= purchaseSpawnPoints.Length) nextSpawnIndex = 0;
 
@@ -217,14 +226,16 @@ public class CapturePoint : MonoBehaviour
 
     // --- VISUAL UPDATES ---
 
-    void UpdatePointColor() { 
+    void UpdatePointColor()
+    {
         if (pointRenderer == null) return;
         if (captureProgress > 0) pointRenderer.material.color = Color.Lerp(neutralColor, attackerColor, captureProgress / 100f);
         else if (captureProgress < 0) pointRenderer.material.color = Color.Lerp(neutralColor, defenderColor, Mathf.Abs(captureProgress) / 100f);
         else pointRenderer.material.color = neutralColor;
     }
 
-    void UpdateFloatingText() { 
+    void UpdateFloatingText()
+    {
         if (progressText != null)
         {
             if (isLocked)
@@ -241,7 +252,8 @@ public class CapturePoint : MonoBehaviour
         }
     }
 
-    void UpdateFlatTextPosition() { 
+    void UpdateFlatTextPosition()
+    {
         if (canvasTransform == null) return;
         canvasTransform.position = transform.position + (Vector3.up * groundOffset);
         canvasTransform.rotation = Quaternion.Euler(90f, 0f, 0f);
