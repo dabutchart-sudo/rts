@@ -70,6 +70,7 @@ public class AICommander : MonoBehaviour
             {
                 if (unit == null || aiCommandXP < unit.xpCost) continue;
                 if (!IsPurchaseCategoryAllowed(unit)) continue;
+                if (!IsWithinSpecialistDeploymentLimit(unit)) continue;
 
                 affordableOptions.Add(new PurchaseOption { unit = unit, sourceBase = cp });
             }
@@ -101,8 +102,32 @@ public class AICommander : MonoBehaviour
         return allowOtherPurchases;
     }
 
+    private bool IsWithinSpecialistDeploymentLimit(PurchasableUnit unit)
+    {
+        if (unit == null || unit.GetResolvedCategory() != UnitCategory.Infantry) return true;
+        if (!unit.TryGetResolvedInfantryClass(out UnitClass unitClass)) return true;
+        if (unitClass == UnitClass.Assault) return true;
+
+        SpecialistDeploymentTracker tracker = SpecialistDeploymentTracker.EnsureInstance();
+        return tracker == null || tracker.CanDeploy(aiFaction, unitClass);
+    }
+
     private void ExecutePurchase(PurchasableUnit unit, CapturePoint sourceBase)
     {
+        UnitClass resolvedClass = UnitClass.Assault;
+        bool isSpecialist = unit.GetResolvedCategory() == UnitCategory.Infantry &&
+                            unit.TryGetResolvedInfantryClass(out resolvedClass) &&
+                            resolvedClass != UnitClass.Assault;
+
+        if (isSpecialist)
+        {
+            SpecialistDeploymentTracker tracker = SpecialistDeploymentTracker.EnsureInstance();
+            if (tracker != null && !tracker.TryRegisterDeployment(aiFaction, resolvedClass))
+            {
+                return;
+            }
+        }
+
         aiCommandXP -= unit.xpCost;
         Transform spawnLocation = sourceBase.GetNextAvailableSpawnPoint();
         GameObject spawnedUnit = Instantiate(unit.unitPrefab, spawnLocation.position, spawnLocation.rotation);
@@ -122,6 +147,7 @@ public class AICommander : MonoBehaviour
         if (!unit.TryGetResolvedInfantryClass(out UnitClass unitClass)) return;
 
         UnitClassIdentity.Ensure(spawnedUnit, unitClass);
+        ReconUnitProfile.ApplyIfRecon(spawnedUnit);
 
         if (unitClass == UnitClass.Assault) return;
 
