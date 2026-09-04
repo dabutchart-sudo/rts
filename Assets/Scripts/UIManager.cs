@@ -8,12 +8,16 @@ public class UIManager : MonoBehaviour
     public static UIManager Instance;
 
     [Header("UI Text References")]
-    public TextMeshProUGUI statsText; // This single box handles ALL tickets and XP now
+    public TextMeshProUGUI statsText;
     public TextMeshProUGUI captureText;
     public TextMeshProUGUI gameOverText;
 
-    // Tracks individual capture points within the sector
-    private Dictionary<string, string> capturePointStatuses = new Dictionary<string, string>();
+    [Header("Readability")]
+    [Tooltip("Multiplier applied to the right-side capture status panel font at runtime.")]
+    public float capturePanelFontMultiplier = 2f;
+
+    private readonly Dictionary<string, string> capturePointStatuses = new Dictionary<string, string>();
+    private bool captureFontScaled = false;
 
     void Awake()
     {
@@ -27,32 +31,38 @@ public class UIManager : MonoBehaviour
         {
             gameOverText.gameObject.SetActive(false);
         }
+
+        ApplyCapturePanelReadability();
     }
 
     void Update()
     {
-        // Continuously fetch and format the latest stats directly from the GameManager
+        ApplyCapturePanelReadability();
+
         if (GameManager.Instance != null && statsText != null)
         {
             int attTickets = GameManager.Instance.attackerTickets;
-            int defTickets = GameManager.Instance.defenderTickets;
             int attXP = GameManager.Instance.attackerXP;
             int defXP = GameManager.Instance.defenderXP;
 
-            statsText.text = 
+            statsText.text =
                 "<color=#5A9BD5><b>ATTACKERS</b></color>\n" +
                 $"Tickets: {attTickets}   |   XP: {attXP}\n\n" +
                 "<color=#C00000><b>DEFENDERS</b></color>\n" +
-                $"Tickets: {defTickets}   |   XP: {defXP}";
+                $"XP: {defXP}";
         }
     }
 
-    // --- EMPTY STUBS TO PREVENT GAMEMANAGER ERRORS ---
-    // GameManager still calls these, but we don't need them to do anything 
-    // anymore because the Update() loop above is doing the heavy lifting.
+    private void ApplyCapturePanelReadability()
+    {
+        if (captureFontScaled || captureText == null) return;
+
+        captureText.fontSize *= Mathf.Max(1f, capturePanelFontMultiplier);
+        captureFontScaled = true;
+    }
+
     public void UpdateTickets(int tickets) { }
     public void UpdateXP(int currentXP) { }
-    // -------------------------------------------------
 
     public void UpdateCaptureStatus(string capturePointName, float progress, int attackers, int defenders)
     {
@@ -60,40 +70,40 @@ public class UIManager : MonoBehaviour
 
         int displayPercentage = Mathf.Abs(Mathf.RoundToInt(progress));
         string statusText = "";
-        string colorHex = "#FFFFFF"; 
+        string colorHex = "#FFFFFF";
 
         if (progress >= 100f)
         {
             statusText = capturePointName + ": SECURED (100%)";
-            colorHex = "#00FFFF"; 
+            colorHex = "#00FFFF";
         }
         else if (progress > 0)
         {
             statusText = capturePointName + ": Capturing (" + displayPercentage + "% Atk)";
-            colorHex = "#00FFFF"; 
+            colorHex = "#00FFFF";
         }
         else if (progress == 0)
         {
             statusText = capturePointName + ": Neutralized (0%)";
-            colorHex = "#FFFFFF"; 
+            colorHex = "#FFFFFF";
         }
         else if (progress > -100f)
         {
             if (attackers > defenders)
             {
                 statusText = capturePointName + ": Neutralizing (" + displayPercentage + "% Def)";
-                colorHex = "#FFA500"; 
+                colorHex = "#FFA500";
             }
             else
             {
                 statusText = capturePointName + ": Defenders Fortifying (" + displayPercentage + "% Def)";
-                colorHex = "#FF0000"; 
+                colorHex = "#FF0000";
             }
         }
         else
         {
             statusText = capturePointName + ": Defender Controlled (100%)";
-            colorHex = "#FF0000"; 
+            colorHex = "#FF0000";
         }
 
         capturePointStatuses[capturePointName] = $"<color={colorHex}>{statusText}</color>";
@@ -144,7 +154,7 @@ public class UIManager : MonoBehaviour
             gameOverText.text = message;
         }
     }
-    
+
     public void ClearSectorStatuses()
     {
         capturePointStatuses.Clear();
