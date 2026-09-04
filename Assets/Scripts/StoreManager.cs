@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 using System.Collections.Generic;
+using System.Text;
 
 public class StoreManager : MonoBehaviour
 {
@@ -9,6 +10,14 @@ public class StoreManager : MonoBehaviour
     public Transform sidebarContainer;
     public GameObject rowPrefab;
     public GameObject unitButtonPrefab;
+
+    [Header("Spawn Source Readability")]
+    [Tooltip("Reserved width for the BASE/A1/A2 source label so it cannot be squeezed out by unit buttons.")]
+    public float sourceLabelWidth = 70f;
+
+    [Header("Diagnostics")]
+    [Tooltip("Log the resolved spawn sources and purchase catalog whenever the store is rebuilt.")]
+    public bool logResolvedStore = true;
 
     private class StoreButton
     {
@@ -26,29 +35,42 @@ public class StoreManager : MonoBehaviour
 
     private readonly List<StoreButton> allStoreButtons = new List<StoreButton>();
     private readonly List<StoreRow> allStoreRows = new List<StoreRow>();
+
     private float refreshTimer = 0f;
     private bool isInitialized = false;
     private int initializedSectorIndex = -1;
+    private string initializedCatalogSignature = string.Empty;
+    private string initializedSourceSignature = string.Empty;
 
     void Update()
     {
         if (GameManager.Instance == null) return;
         if (GameManager.Instance.playerFaction == Faction.None) return;
 
-        if (!isInitialized || initializedSectorIndex != GameManager.Instance.currentSectorIndex)
-        {
-            InitializeStoreUI();
-        }
-
         refreshTimer += Time.deltaTime;
-        if (refreshTimer >= 0.35f)
+        if (refreshTimer < 0.35f) return;
+        refreshTimer = 0f;
+
+        Faction playerFaction = GameManager.Instance.playerFaction;
+        string currentCatalogSignature = BuildCatalogSignature(playerFaction);
+        string currentSourceSignature = BuildSourceSignature(playerFaction);
+
+        bool needsRebuild = !isInitialized ||
+                            initializedSectorIndex != GameManager.Instance.currentSectorIndex ||
+                            initializedCatalogSignature != currentCatalogSignature ||
+                            initializedSourceSignature != currentSourceSignature;
+
+        if (needsRebuild)
+        {
+            InitializeStoreUI(currentCatalogSignature, currentSourceSignature);
+        }
+        else
         {
             RefreshButtonStates();
-            refreshTimer = 0f;
         }
     }
 
-    private void InitializeStoreUI()
+    private void InitializeStoreUI(string catalogSignature = null, string sourceSignature = null)
     {
         ClearStoreUI();
 
@@ -66,6 +88,14 @@ public class StoreManager : MonoBehaviour
 
         isInitialized = true;
         initializedSectorIndex = GameManager.Instance.currentSectorIndex;
+        initializedCatalogSignature = catalogSignature ?? BuildCatalogSignature(playerFaction);
+        initializedSourceSignature = sourceSignature ?? BuildSourceSignature(playerFaction);
+
+        if (logResolvedStore)
+        {
+            Debug.Log(BuildResolvedStoreLog(playerFaction, sources, catalog));
+        }
+
         RefreshButtonStates();
     }
 
@@ -89,7 +119,19 @@ public class StoreManager : MonoBehaviour
 
         GameObject newRow = Instantiate(rowPrefab, sidebarContainer);
         TextMeshProUGUI rowText = newRow.GetComponentInChildren<TextMeshProUGUI>();
-        if (rowText != null) rowText.text = source.DisplayName;
+
+        if (rowText != null)
+        {
+            rowText.text = source.DisplayName;
+            rowText.alignment = TextAlignmentOptions.Center;
+            rowText.fontStyle = FontStyles.Bold;
+
+            LayoutElement labelLayout = rowText.GetComponent<LayoutElement>();
+            if (labelLayout == null) labelLayout = rowText.gameObject.AddComponent<LayoutElement>();
+            labelLayout.minWidth = sourceLabelWidth;
+            labelLayout.preferredWidth = sourceLabelWidth;
+            labelLayout.flexibleWidth = 0f;
+        }
 
         allStoreRows.Add(new StoreRow
         {
@@ -229,6 +271,8 @@ public class StoreManager : MonoBehaviour
 
         GameObject spawnedUnit = Instantiate(unit.unitPrefab, spawnLoc.position, spawnLoc.rotation);
         RegisterPurchasedUnit(spawnedUnit, unit);
+
+        Debug.Log($"🪂 PLAYER DEPLOYMENT ({playerFaction}): {unit.unitDisplayName} from {storeButton.source.DisplayName}.");
         RefreshButtonStates();
     }
 
@@ -252,5 +296,72 @@ public class StoreManager : MonoBehaviour
         {
             squadManager.RegisterSpecialistUnit(spawnedUnit, unitClass);
         }
+    }
+
+    private string BuildCatalogSignature(Faction faction)
+    {
+        List<PurchasableUnit> catalog = SpawnSourceResolver.GetCurrentSectorCatalog(faction);
+        StringBuilder builder = new StringBuilder();
+
+        foreach (PurchasableUnit unit in catalog)
+        {
+            if (unit == null) continue;
+            builder.Append(unit.unitDisplayName).Append('|')
+                   .Append(unit.xpCost).Append('|')
+                   .Append(unit.GetResolvedCategory()).Append('|');
+
+            if (unit.TryGetResolvedInfantryClass(out UnitClass unitClass))
+            {
+                builder.Append(unitClass);
+            }
+
+            builder.Append(';');
+        }
+
+        return builder.ToString();
+    }
+
+    private string BuildSourceSignature(Faction faction)
+    {
+        List<SpawnSource> sources = SpawnSourceResolver.GetCurrentSectorSources(faction, false);
+        StringBuilder builder = new StringBuilder();
+
+        foreach (SpawnSource source in sources)
+        {
+            if (source == null) continue;
+            builder.Append(source.Kind).Append('|')
+                   .Append(source.DisplayName).Append('|')
+                   .Append(source.SectorIndex).Append(';');
+        }
+
+        return builder.ToString();
+    }
+
+    private string BuildResolvedStoreLog(Faction faction, List<SpawnSource> sources, List<PurchasableUnit> catalog)
+    {
+        StringBuilder sourceText = new StringBuilder();
+        if (sources != null)
+        {
+            foreach (SpawnSource source in sources)
+            {
+                if (source == null) continue;
+                if (sourceText.Length > 0) sourceText.Append(", ");
+                sourceText.Append(source.DisplayName)
+                          .Append(source.IsAvailable() ? "[READY]" : "[LOCKED]");
+            }
+        }
+
+        StringBuilder catalogText = new StringBuilder();
+        if (catalog != null)
+        {
+            foreach (PurchasableUnit unit in catalog)
+            {
+                if (unit == null) continue;
+                if (catalogText.Length > 0) catalogText.Append(", ");
+                catalogText.Append(unit.unitDisplayName).Append('(').Append(unit.xpCost).Append(" XP)");
+            }
+        }
+
+        return $"🛒 STORE RESOLVED ({faction}) Sector {GameManager.Instance.currentSectorIndex + 1}: Sources = {sourceText}; Catalog = {catalogText}";
     }
 }
