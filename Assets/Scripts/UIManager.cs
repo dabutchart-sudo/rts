@@ -44,11 +44,15 @@ public class UIManager : MonoBehaviour
             int attTickets = GameManager.Instance.attackerTickets;
             int attXP = GameManager.Instance.attackerXP;
             int defXP = GameManager.Instance.defenderXP;
+            Faction playerFaction = GameManager.Instance.playerFaction;
+
+            string attackerYou = playerFaction == Faction.Attacker ? "  <size=75%><b>◀ YOU</b></size>" : string.Empty;
+            string defenderYou = playerFaction == Faction.Defender ? "  <size=75%><b>◀ YOU</b></size>" : string.Empty;
 
             statsText.text =
-                "<color=#5A9BD5><b>ATTACKERS</b></color>\n" +
+                $"<color=#5A9BD5><b>ATTACKERS</b>{attackerYou}</color>\n" +
                 $"Tickets: {attTickets}   |   XP: {attXP}\n\n" +
-                "<color=#C00000><b>DEFENDERS</b></color>\n" +
+                $"<color=#C00000><b>DEFENDERS</b>{defenderYou}</color>\n" +
                 $"XP: {defXP}";
         }
     }
