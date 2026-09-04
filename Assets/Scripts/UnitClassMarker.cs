@@ -2,14 +2,16 @@ using TMPro;
 using UnityEngine;
 
 /// <summary>
-/// Authoritative world-space class marker. The displayed letter always comes from
-/// UnitClassIdentity, while colour always comes from the shared faction palette.
+/// Authoritative class marker painted onto the top face of infantry units.
+/// The floating marker is reserved for squad number, while class is conveyed by shape:
+/// Assault=triangle, Engineer=crossed mark, Recon=target, Support=plus.
 /// </summary>
 public sealed class UnitClassMarker : MonoBehaviour
 {
-    [SerializeField] private float markerHeight = 2.55f;
-    [SerializeField] private float markerScale = 0.42f;
-    [SerializeField] private float fontSize = 9f;
+    [Header("Top-Face Class Icon")]
+    [SerializeField] private float markerHeight = 1.02f;
+    [SerializeField] private float markerScale = 0.18f;
+    [SerializeField] private float fontSize = 8f;
 
     private TextMeshPro markerText;
     private UnitClassIdentity identity;
@@ -32,22 +34,30 @@ public sealed class UnitClassMarker : MonoBehaviour
     {
         Transform existing = transform.Find("UnitClassMarker");
         if (existing != null) markerText = existing.GetComponent<TextMeshPro>();
-        if (markerText != null) return;
 
-        GameObject markerObject = new GameObject("UnitClassMarker");
-        markerObject.transform.SetParent(transform, false);
-        markerObject.transform.localPosition = new Vector3(0f, markerHeight, 0f);
-        markerObject.transform.localRotation = Quaternion.identity;
-        markerObject.transform.localScale = Vector3.one * markerScale;
+        if (markerText == null)
+        {
+            GameObject markerObject = new GameObject("UnitClassMarker");
+            markerObject.transform.SetParent(transform, false);
+            markerText = markerObject.AddComponent<TextMeshPro>();
+        }
 
-        markerText = markerObject.AddComponent<TextMeshPro>();
+        markerText.transform.localPosition = new Vector3(0f, markerHeight, 0f);
+        markerText.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+        markerText.transform.localScale = Vector3.one * markerScale;
+
+        Billboard billboard = markerText.GetComponent<Billboard>();
+        if (billboard != null) Destroy(billboard);
+
         markerText.alignment = TextAlignmentOptions.Center;
         markerText.fontSize = fontSize;
         markerText.fontStyle = FontStyles.Bold;
+        markerText.color = Color.white;
+        markerText.outlineWidth = 0.18f;
+        markerText.outlineColor = Color.black;
         markerText.enableAutoSizing = false;
         markerText.raycastTarget = false;
-        markerText.sortingOrder = 30;
-        markerObject.AddComponent<Billboard>();
+        markerText.sortingOrder = 28;
     }
 
     private void HideLegacyClassLabels()
@@ -56,34 +66,38 @@ public sealed class UnitClassMarker : MonoBehaviour
         foreach (TMP_Text label in labels)
         {
             if (label == null || label == markerText) continue;
+
             string value = label.text != null ? label.text.Trim() : string.Empty;
-            if (value == "A" || value == "E" || value == "R" || value == "S") label.gameObject.SetActive(false);
+            if (value == "A" || value == "E" || value == "R" || value == "S")
+            {
+                label.gameObject.SetActive(false);
+            }
         }
     }
 
     private void Refresh()
     {
         if (markerText == null) return;
+
         UnitClass unitClass = identity != null ? identity.Class : UnitClass.Assault;
-        markerText.text = GetClassLetter(unitClass);
-        markerText.color = CompareTag("Attacker") ? FactionVisuals.AttackerColor :
-                           CompareTag("Defender") ? FactionVisuals.DefenderColor : Color.white;
+        markerText.text = GetClassIcon(unitClass);
     }
 
-    private string GetClassLetter(UnitClass unitClass)
+    private string GetClassIcon(UnitClass unitClass)
     {
         switch (unitClass)
         {
-            case UnitClass.Engineer: return "E";
-            case UnitClass.Recon: return "R";
-            case UnitClass.Support: return "S";
-            default: return "A";
+            case UnitClass.Engineer: return "×";
+            case UnitClass.Recon: return "◎";
+            case UnitClass.Support: return "+";
+            default: return "▲";
         }
     }
 
     public static UnitClassMarker Ensure(GameObject unit)
     {
         if (unit == null) return null;
+
         UnitClassMarker marker = unit.GetComponent<UnitClassMarker>();
         if (marker == null) marker = unit.AddComponent<UnitClassMarker>();
         return marker;
