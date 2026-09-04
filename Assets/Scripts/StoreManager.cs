@@ -19,21 +19,18 @@ public class StoreManager : MonoBehaviour
 
     private List<StoreButton> allStoreButtons = new List<StoreButton>();
     private float refreshTimer = 0f;
-
     private bool isInitialized = false;
 
     void Update()
     {
         if (GameManager.Instance == null) return;
 
-        // Wait until the player actually chooses a faction before building the store!
         if (!isInitialized && GameManager.Instance.playerFaction != Faction.None)
         {
             InitializeStoreUI();
             isInitialized = true;
         }
 
-        // Only run the refresh loop if the store has actually been built
         if (isInitialized)
         {
             refreshTimer += Time.deltaTime;
@@ -50,7 +47,6 @@ public class StoreManager : MonoBehaviour
         if (GameManager.Instance == null) return;
         Faction playerFaction = GameManager.Instance.playerFaction;
 
-        // Generate a row for every capture point across all sectors
         foreach (Sector sector in GameManager.Instance.sectors)
         {
             foreach (CapturePoint cp in sector.capturePoints)
@@ -63,7 +59,9 @@ public class StoreManager : MonoBehaviour
                 TextMeshProUGUI rowText = newRow.GetComponentInChildren<TextMeshProUGUI>();
                 if (rowText != null) rowText.text = cp.capturePointName;
 
-                PurchasableUnit[] unitsToDisplay = (playerFaction == Faction.Attacker) ? cp.attackerPurchasables : cp.defenderPurchasables;
+                PurchasableUnit[] unitsToDisplay = playerFaction == Faction.Attacker
+                    ? cp.attackerPurchasables
+                    : cp.defenderPurchasables;
 
                 foreach (PurchasableUnit unit in unitsToDisplay)
                 {
@@ -91,56 +89,59 @@ public class StoreManager : MonoBehaviour
         if (GameManager.Instance == null) return;
 
         Faction playerFaction = GameManager.Instance.playerFaction;
-
-        // Check the correct XP pool based on the player's faction
-        int currentXP = (playerFaction == Faction.Attacker) ? GameManager.Instance.attackerXP : GameManager.Instance.defenderXP;
+        int currentXP = playerFaction == Faction.Attacker
+            ? GameManager.Instance.attackerXP
+            : GameManager.Instance.defenderXP;
 
         foreach (StoreButton sb in allStoreButtons)
         {
             bool canAfford = currentXP >= sb.unit.xpCost;
             bool ownsBase = sb.sourceBase.IsControlledBy(playerFaction);
-
-            // Button is ONLY interactable if you have the XP AND currently own the base
-            sb.button.interactable = (canAfford && ownsBase);
+            sb.button.interactable = canAfford && ownsBase;
         }
     }
 
     private void PurchaseUnit(PurchasableUnit unit, CapturePoint sourceBase)
     {
-        if (GameManager.Instance == null) return;
+        if (GameManager.Instance == null || unit == null || sourceBase == null) return;
+
         Faction playerFaction = GameManager.Instance.playerFaction;
+        int currentXP = playerFaction == Faction.Attacker
+            ? GameManager.Instance.attackerXP
+            : GameManager.Instance.defenderXP;
 
-        // Get the current XP pool
-        int currentXP = (playerFaction == Faction.Attacker) ? GameManager.Instance.attackerXP : GameManager.Instance.defenderXP;
+        if (currentXP < unit.xpCost || !sourceBase.IsControlledBy(playerFaction)) return;
 
-        if (currentXP >= unit.xpCost && sourceBase.IsControlledBy(playerFaction))
+        if (playerFaction == Faction.Attacker)
         {
-            // Deduct the cost from the correct faction's pool
-            if (playerFaction == Faction.Attacker)
-            {
-                GameManager.Instance.attackerXP -= unit.xpCost;
-            }
-            else if (playerFaction == Faction.Defender)
-            {
-                GameManager.Instance.defenderXP -= unit.xpCost;
-            }
-
-            Transform spawnLoc = sourceBase.GetNextAvailableSpawnPoint();
-            GameObject spawnedUnit = Instantiate(unit.unitPrefab, spawnLoc.position, spawnLoc.rotation);
-            RegisterPurchasedSpecialist(spawnedUnit, unit);
-
-            RefreshButtonStates();
+            GameManager.Instance.attackerXP -= unit.xpCost;
         }
+        else if (playerFaction == Faction.Defender)
+        {
+            GameManager.Instance.defenderXP -= unit.xpCost;
+        }
+
+        Transform spawnLoc = sourceBase.GetNextAvailableSpawnPoint();
+        GameObject spawnedUnit = Instantiate(unit.unitPrefab, spawnLoc.position, spawnLoc.rotation);
+        RegisterPurchasedUnit(spawnedUnit, unit);
+
+        RefreshButtonStates();
     }
 
-    private void RegisterPurchasedSpecialist(GameObject spawnedUnit, PurchasableUnit unit)
+    private void RegisterPurchasedUnit(GameObject spawnedUnit, PurchasableUnit unit)
     {
         if (spawnedUnit == null || unit == null) return;
 
-        UnitClass unitClass = UnitClassIdentity.InferFromDisplayName(unit.unitDisplayName);
-        if (unitClass == UnitClass.Assault) return;
+        UnitCategory category = unit.GetResolvedCategory();
+        UnitCategoryIdentity.Ensure(spawnedUnit, category);
+
+        if (category != UnitCategory.Infantry) return;
+        if (!unit.TryGetResolvedInfantryClass(out UnitClass unitClass)) return;
 
         UnitClassIdentity.Ensure(spawnedUnit, unitClass);
+
+        if (unitClass == UnitClass.Assault) return;
+
         SquadManager squadManager = SquadManager.EnsureInstance();
         if (squadManager != null)
         {
