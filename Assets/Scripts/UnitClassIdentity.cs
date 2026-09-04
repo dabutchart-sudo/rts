@@ -15,9 +15,15 @@ public sealed class UnitClassIdentity : MonoBehaviour
 
     public UnitClass Class => unitClass;
 
+    private void Awake()
+    {
+        UnitClassMarker.Ensure(gameObject);
+    }
+
     public void SetClass(UnitClass newClass)
     {
         unitClass = newClass;
+        UnitClassMarker.Ensure(gameObject);
     }
 
     public static UnitClass GetClass(GameObject unit, UnitClass fallback = UnitClass.Assault)
