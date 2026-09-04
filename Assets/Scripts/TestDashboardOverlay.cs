@@ -353,7 +353,7 @@ public class TestDashboardOverlay : MonoBehaviour
         rt.anchorMax = new Vector2(1f, 1f);
         rt.pivot = new Vector2(1f, 1f);
         rt.anchoredPosition = new Vector2(-15f, -15f);
-        rt.sizeDelta = new Vector2(900f, 780f);
+        rt.sizeDelta = new Vector2(700f, 780f);
 
         GameObject textGo = new GameObject("StatsText", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
         textGo.transform.SetParent(overlayPanel.transform, false);
