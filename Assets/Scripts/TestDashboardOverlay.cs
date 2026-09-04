@@ -104,7 +104,7 @@ public class TestDashboardOverlay : MonoBehaviour
     {
         if (Instance != null && !Instance.enableDeathMarkers) return;
 
-        Color markerCol = isAttacker ? new Color(1f, 0.2f, 0.2f, 0.85f) : new Color(0.2f, 0.5f, 1f, 0.85f);
+        Color markerCol = isAttacker ? FactionVisuals.AttackerColor : FactionVisuals.DefenderColor;
         activeDeathMarkers.Add(new DeathMarker
         {
             position = worldPos,
@@ -147,7 +147,6 @@ public class TestDashboardOverlay : MonoBehaviour
         float elapsedMin = elapsed / 60f;
 
         float atkBurnRate = elapsedMin > 0.05f ? (150 - gm.attackerTickets) / elapsedMin : 0f;
-        float defBurnRate = elapsedMin > 0.05f ? (100 - gm.defenderTickets) / elapsedMin : 0f;
 
         float avgAtkLife = gm.attackerDeaths > 0 ? gm.attackerTotalLifespan / gm.attackerDeaths : 0f;
         float avgDefLife = gm.defenderDeaths > 0 ? gm.defenderTotalLifespan / gm.defenderDeaths : 0f;
@@ -203,10 +202,10 @@ public class TestDashboardOverlay : MonoBehaviour
             $"Live: A {attackerClasses.assault} | E {attackerClasses.engineer} | R {attackerClasses.recon} | S {attackerClasses.support} | V {attackerClasses.vehicle} | ? {attackerClasses.unknown} | <b>Total {attackerClasses.Total}</b>" + attackerVehicleLine + attackerUnknownLine + "\n" +
             $"Kills: {attackerKills} | Deaths: {gm.attackerDeaths} | K/D: {attackerKd}\n" +
             $"Avg Life: {avgAtkLife:F1}s | Burn: {atkBurnRate:F1} t/m\n\n" +
-            $"<color=#C00000><b>DEFENDERS</b></color> [Tickets: {Mathf.Max(0, gm.defenderTickets)} | XP: {gm.defenderXP}]\n" +
+            $"<color=#C00000><b>DEFENDERS</b></color> [XP: {gm.defenderXP}]\n" +
             $"Live: A {defenderClasses.assault} | E {defenderClasses.engineer} | R {defenderClasses.recon} | S {defenderClasses.support} | V {defenderClasses.vehicle} | ? {defenderClasses.unknown} | <b>Total {defenderClasses.Total}</b>" + defenderVehicleLine + defenderUnknownLine + "\n" +
             $"Kills: {defenderKills} | Deaths: {gm.defenderDeaths} | K/D: {defenderKd}\n" +
-            $"Avg Life: {avgDefLife:F1}s | Burn: {defBurnRate:F1} t/m\n\n" +
+            $"Avg Life: {avgDefLife:F1}s\n\n" +
             $"<b>BATCH AGGREGATE ({totalMatches} Finished):</b>\n" +
             $"Atk Wins: {TotalAttackerWins} ({atkWsPct:F0}%) | Def Wins: {TotalDefenderWins} ({defWsPct:F0}%)\n" +
             $"Avg Match: {avgMatchDuration:F1}s | Detailed CSV telemetry enabled";
@@ -354,13 +353,13 @@ public class TestDashboardOverlay : MonoBehaviour
         rt.anchorMax = new Vector2(1f, 1f);
         rt.pivot = new Vector2(1f, 1f);
         rt.anchoredPosition = new Vector2(-15f, -15f);
-        rt.sizeDelta = new Vector2(600f, 465f);
+        rt.sizeDelta = new Vector2(900f, 780f);
 
         GameObject textGo = new GameObject("StatsText", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
         textGo.transform.SetParent(overlayPanel.transform, false);
 
         statsText = textGo.GetComponent<TextMeshProUGUI>();
-        statsText.fontSize = 13;
+        statsText.fontSize = 26;
         statsText.color = Color.white;
         statsText.alignment = TextAlignmentOptions.TopLeft;
 
@@ -370,8 +369,8 @@ public class TestDashboardOverlay : MonoBehaviour
         var textRt = textGo.GetComponent<RectTransform>();
         textRt.anchorMin = Vector2.zero;
         textRt.anchorMax = Vector2.one;
-        textRt.offsetMin = new Vector2(12f, 12f);
-        textRt.offsetMax = new Vector2(-12f, -12f);
+        textRt.offsetMin = new Vector2(18f, 18f);
+        textRt.offsetMax = new Vector2(-18f, -18f);
     }
 
     void OnDrawGizmos()
