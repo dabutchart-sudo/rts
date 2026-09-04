@@ -6,15 +6,18 @@ public class UnitSpawner : MonoBehaviour
     public bool isDefenderSpawner = false;
     public GameObject assaultPrefab;
     public int initialSpawnCount = 15;
-    
+
     [Header("Reinforcements")]
     public float attackerRespawnDelay = 5f;
-    
-    [Tooltip("How often a new defender wave spawns to reinforce the point.")]
-    public float defenderAutoSpawnInterval = 10f; 
-    
-    [Tooltip("How many defenders spawn together as a reinforcement squad.")]
-    public int defenderWaveSize = 5; 
+
+    [Tooltip("How often the defender spawner checks whether Assault reinforcements are needed.")]
+    public float defenderAutoSpawnInterval = 10f;
+
+    [Tooltip("Maximum number of defender Assault units that one defender spawner will maintain alive at once.")]
+    [Min(1)] public int defenderAssaultPopulationCap = 16;
+
+    [Tooltip("Maximum number of defender Assault units added during one reinforcement check.")]
+    [Min(1)] public int defenderWaveSize = 5;
 
     private float defenderTimer = 0f;
     private bool hasSpawned = false;
@@ -30,8 +33,14 @@ public class UnitSpawner : MonoBehaviour
         hasSpawned = true;
 
         string teamName = isDefenderSpawner ? "Defenders" : "Attackers";
-        
+
         Debug.Log($"🔢 SPAWN COUNT CHECK: Spawning {initialSpawnCount} units for {teamName}...");
+
+        if (isDefenderSpawner)
+        {
+            SpawnDefenderAssaultsUpToLimit(initialSpawnCount);
+            return;
+        }
 
         for (int i = 0; i < initialSpawnCount; i++)
         {
@@ -41,6 +50,15 @@ public class UnitSpawner : MonoBehaviour
 
     public void SpawnWave(int count)
     {
+        if (count <= 0) return;
+
+        if (isDefenderSpawner)
+        {
+            int spawned = SpawnDefenderAssaultsUpToLimit(count);
+            Debug.Log($"🌊 DEFENDER REINFORCEMENT: Requested {count}, deployed {spawned}, alive Assaults {GetAliveDefenderAssaultCount()}/{GetDefenderAssaultCap()}.");
+            return;
+        }
+
         Debug.Log($"🌊 SPAWN WAVE: Deploying {count} reinforcements!");
         for (int i = 0; i < count; i++)
         {
@@ -60,25 +78,14 @@ public class UnitSpawner : MonoBehaviour
             if (defenderTimer >= defenderAutoSpawnInterval)
             {
                 defenderTimer = 0f;
-                
-                for (int i = 0; i < defenderWaveSize; i++)
-                {
-                    if (GameManager.Instance != null && GameManager.Instance.SpendTickets(false, 1))
-                    {
-                        SpawnSingleUnit();
-                    }
-                    else
-                    {
-                        break; 
-                    }
-                }
+                SpawnDefenderAssaultsUpToLimit(defenderWaveSize);
             }
         }
     }
 
     public void RespawnAssaultUnit()
     {
-        if (isDefenderSpawner) return; 
+        if (isDefenderSpawner) return;
         Invoke(nameof(SpawnAssaultDelayed), attackerRespawnDelay);
     }
 
@@ -88,6 +95,54 @@ public class UnitSpawner : MonoBehaviour
         {
             SpawnSingleUnit();
         }
+    }
+
+    private int SpawnDefenderAssaultsUpToLimit(int requestedCount)
+    {
+        if (!isDefenderSpawner || requestedCount <= 0) return 0;
+
+        int cap = GetDefenderAssaultCap();
+        int alive = GetAliveDefenderAssaultCount();
+        int availableSlots = Mathf.Max(0, cap - alive);
+        int unitsToSpawn = Mathf.Min(requestedCount, availableSlots);
+
+        int spawned = 0;
+        for (int i = 0; i < unitsToSpawn; i++)
+        {
+            if (GameManager.Instance != null && !GameManager.Instance.SpendTickets(false, 1))
+            {
+                break;
+            }
+
+            SpawnSingleUnit();
+            spawned++;
+        }
+
+        return spawned;
+    }
+
+    private int GetDefenderAssaultCap()
+    {
+        return Mathf.Max(1, defenderAssaultPopulationCap);
+    }
+
+    private int GetAliveDefenderAssaultCount()
+    {
+        GameObject[] defenders = GameObject.FindGameObjectsWithTag("Defender");
+        int count = 0;
+
+        foreach (GameObject defender in defenders)
+        {
+            if (defender == null) continue;
+
+            UnitClassIdentity identity = defender.GetComponent<UnitClassIdentity>();
+            if (identity == null || identity.Class == UnitClass.Assault)
+            {
+                count++;
+            }
+        }
+
+        return count;
     }
 
     void SpawnSingleUnit()
