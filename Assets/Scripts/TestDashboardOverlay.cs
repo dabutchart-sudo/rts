@@ -32,8 +32,9 @@ public class TestDashboardOverlay : MonoBehaviour
         public int engineer;
         public int recon;
         public int support;
+        public int other;
 
-        public int Total => assault + engineer + recon + support;
+        public int Total => assault + engineer + recon + support + other;
     }
 
     [Header("UI References (Idea A)")]
@@ -136,7 +137,9 @@ public class TestDashboardOverlay : MonoBehaviour
         if (statsText == null || GameManager.Instance == null) return;
 
         var gm = GameManager.Instance;
-        float elapsed = Time.time - (float)typeof(GameManager).GetField("matchStartTime", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).GetValue(gm);
+        float elapsed = Time.time - (float)typeof(GameManager)
+            .GetField("matchStartTime", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+            .GetValue(gm);
         float elapsedMin = elapsed / 60f;
 
         float atkBurnRate = elapsedMin > 0.05f ? (150 - gm.attackerTickets) / elapsedMin : 0f;
@@ -145,10 +148,15 @@ public class TestDashboardOverlay : MonoBehaviour
         float avgAtkLife = gm.attackerDeaths > 0 ? gm.attackerTotalLifespan / gm.attackerDeaths : 0f;
         float avgDefLife = gm.defenderDeaths > 0 ? gm.defenderTotalLifespan / gm.defenderDeaths : 0f;
 
+        int attackerKills = gm.defenderDeaths;
+        int defenderKills = gm.attackerDeaths;
+        string attackerKd = FormatKillDeathRatio(attackerKills, gm.attackerDeaths);
+        string defenderKd = FormatKillDeathRatio(defenderKills, gm.defenderDeaths);
+
         ClassCounts attackerClasses = CountClasses("Attacker");
         ClassCounts defenderClasses = CountClasses("Defender");
 
-        string activeSectorName = (gm.sectors != null && gm.currentSectorIndex < gm.sectors.Length)
+        string activeSectorName = gm.sectors != null && gm.currentSectorIndex < gm.sectors.Length
             ? gm.sectors[gm.currentSectorIndex].sectorName
             : $"Sector {gm.currentSectorIndex}";
 
@@ -172,14 +180,26 @@ public class TestDashboardOverlay : MonoBehaviour
             $"{batchHeader}\n" +
             $"<color=#FFD700>Speed:</color> {Time.timeScale:0}x | <color=#FFD700>Sector:</color> {activeSectorName}\n" +
             $"<color=#5A9BD5><b>ATTACKERS</b></color> [Tickets: {Mathf.Max(0, gm.attackerTickets)} | XP: {gm.attackerXP}]\n" +
-            $"Live: A {attackerClasses.assault} | E {attackerClasses.engineer} | R {attackerClasses.recon} | S {attackerClasses.support} | <b>Total {attackerClasses.Total}</b>\n" +
-            $"Deaths: {gm.attackerDeaths} | Avg Life: {avgAtkLife:F1}s | Burn: {atkBurnRate:F1} t/m\n\n" +
+            $"Live: A {attackerClasses.assault} | E {attackerClasses.engineer} | R {attackerClasses.recon} | S {attackerClasses.support} | O {attackerClasses.other} | <b>Total {attackerClasses.Total}</b>\n" +
+            $"Kills: {attackerKills} | Deaths: {gm.attackerDeaths} | K/D: {attackerKd}\n" +
+            $"Avg Life: {avgAtkLife:F1}s | Burn: {atkBurnRate:F1} t/m\n\n" +
             $"<color=#C00000><b>DEFENDERS</b></color> [Tickets: {Mathf.Max(0, gm.defenderTickets)} | XP: {gm.defenderXP}]\n" +
-            $"Live: A {defenderClasses.assault} | E {defenderClasses.engineer} | R {defenderClasses.recon} | S {defenderClasses.support} | <b>Total {defenderClasses.Total}</b>\n" +
-            $"Deaths: {gm.defenderDeaths} | Avg Life: {avgDefLife:F1}s | Burn: {defBurnRate:F1} t/m\n\n" +
+            $"Live: A {defenderClasses.assault} | E {defenderClasses.engineer} | R {defenderClasses.recon} | S {defenderClasses.support} | O {defenderClasses.other} | <b>Total {defenderClasses.Total}</b>\n" +
+            $"Kills: {defenderKills} | Deaths: {gm.defenderDeaths} | K/D: {defenderKd}\n" +
+            $"Avg Life: {avgDefLife:F1}s | Burn: {defBurnRate:F1} t/m\n\n" +
             $"<b>BATCH AGGREGATE ({totalMatches} Finished):</b>\n" +
             $"Atk Wins: {TotalAttackerWins} ({atkWsPct:F0}%) | Def Wins: {TotalDefenderWins} ({defWsPct:F0}%)\n" +
             $"Avg Match: {avgMatchDuration:F1}s | Detailed CSV telemetry enabled";
+    }
+
+    private static string FormatKillDeathRatio(int kills, int deaths)
+    {
+        if (deaths <= 0)
+        {
+            return kills > 0 ? "INF" : "0.00";
+        }
+
+        return ((float)kills / deaths).ToString("F2");
     }
 
     private ClassCounts CountClasses(string factionTag)
@@ -191,10 +211,21 @@ public class TestDashboardOverlay : MonoBehaviour
         {
             if (unit == null) continue;
 
-            UnitClassIdentity identity = unit.GetComponent<UnitClassIdentity>();
-            UnitClass unitClass = identity != null ? identity.Class : UnitClass.Assault;
+            UnitCategoryIdentity categoryIdentity = unit.GetComponent<UnitCategoryIdentity>();
+            if (categoryIdentity != null && categoryIdentity.Category != UnitCategory.Infantry)
+            {
+                counts.other++;
+                continue;
+            }
 
-            switch (unitClass)
+            UnitClassIdentity classIdentity = unit.GetComponent<UnitClassIdentity>();
+            if (classIdentity == null)
+            {
+                counts.other++;
+                continue;
+            }
+
+            switch (classIdentity.Class)
             {
                 case UnitClass.Engineer:
                     counts.engineer++;
@@ -205,8 +236,11 @@ public class TestDashboardOverlay : MonoBehaviour
                 case UnitClass.Support:
                     counts.support++;
                     break;
-                default:
+                case UnitClass.Assault:
                     counts.assault++;
+                    break;
+                default:
+                    counts.other++;
                     break;
             }
         }
@@ -236,7 +270,7 @@ public class TestDashboardOverlay : MonoBehaviour
         rt.anchorMax = new Vector2(1f, 1f);
         rt.pivot = new Vector2(1f, 1f);
         rt.anchoredPosition = new Vector2(-15f, -15f);
-        rt.sizeDelta = new Vector2(440f, 335f);
+        rt.sizeDelta = new Vector2(475f, 385f);
 
         GameObject textGo = new GameObject("StatsText", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
         textGo.transform.SetParent(overlayPanel.transform, false);
