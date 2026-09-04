@@ -5,7 +5,7 @@ using UnityEngine.AI;
 /// <summary>
 /// Applies the first-pass Recon/sniper identity. Recon uses the normal squad objective
 /// system but stops short of the objective, creating a simple overwatch/standoff role.
-/// Values are deliberately conservative for initial observation and tuning.
+/// It also gains the ReconSpotter support ability.
 /// </summary>
 public sealed class ReconUnitProfile : MonoBehaviour
 {
@@ -18,6 +18,10 @@ public sealed class ReconUnitProfile : MonoBehaviour
     [Header("Recon Movement Profile")]
     [Tooltip("How far Recon tries to stop from its squad objective. This keeps it behind the Assault element instead of standing on the capture point.")]
     [SerializeField] private float objectiveStandoffDistance = 14f;
+
+    [Header("Recon Support Ability")]
+    [Tooltip("Automatically add the Recon spotting scanner when this profile is applied.")]
+    [SerializeField] private bool enableSpotting = true;
 
     [Header("Recon Visual Identity")]
     [Tooltip("Replace existing one-letter class labels on the reused infantry visual with R.")]
@@ -47,6 +51,11 @@ public sealed class ReconUnitProfile : MonoBehaviour
         if (agent != null)
         {
             agent.stoppingDistance = Mathf.Max(agent.stoppingDistance, objectiveStandoffDistance);
+        }
+
+        if (enableSpotting && GetComponent<ReconSpotter>() == null)
+        {
+            gameObject.AddComponent<ReconSpotter>();
         }
 
         ApplyReconName();
