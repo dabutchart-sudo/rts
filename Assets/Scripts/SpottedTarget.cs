@@ -15,7 +15,6 @@ public sealed class SpottedTarget : MonoBehaviour
     public void MarkSpotted(Faction observingFaction, float duration)
     {
         float expiry = Time.time + Mathf.Max(0.1f, duration);
-
         if (observingFaction == Faction.Attacker)
         {
             spottedForAttackersUntil = Mathf.Max(spottedForAttackersUntil, expiry);
@@ -57,13 +56,10 @@ public sealed class SpottedTarget : MonoBehaviour
         text.alignment = TextAlignmentOptions.Center;
         text.fontSize = 9f;
         text.fontStyle = FontStyles.Bold;
-        text.color = faction == Faction.Attacker
-            ? new Color(1f, 0.75f, 0.05f)
-            : new Color(0.2f, 0.8f, 1f);
+        text.color = FactionVisuals.GetColor(faction);
         text.enableAutoSizing = false;
         text.raycastTarget = false;
         text.sortingOrder = 40;
-
         marker.AddComponent<Billboard>();
 
         if (faction == Faction.Attacker) attackerMarker = marker;
@@ -72,22 +68,14 @@ public sealed class SpottedTarget : MonoBehaviour
 
     private void UpdateMarker(GameObject marker, bool active)
     {
-        if (marker != null && marker.activeSelf != active)
-        {
-            marker.SetActive(active);
-        }
+        if (marker != null && marker.activeSelf != active) marker.SetActive(active);
     }
 
     public static SpottedTarget GetOrCreate(GameObject unit)
     {
         if (unit == null) return null;
-
         SpottedTarget spotted = unit.GetComponent<SpottedTarget>();
-        if (spotted == null)
-        {
-            spotted = unit.AddComponent<SpottedTarget>();
-        }
-
+        if (spotted == null) spotted = unit.AddComponent<SpottedTarget>();
         return spotted;
     }
 }
