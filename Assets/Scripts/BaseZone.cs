@@ -12,15 +12,16 @@ public class BaseZone : MonoBehaviour
     [Tooltip("The exact transform where units should spawn.")]
     public Transform spawnPoint;
 
-    [Header("Visual Settings")]
+    [Header("Legacy Ring Visual")]
     public float radius = 4f;
     public float lineWidth = 0.3f;
     public int circleSegments = 36;
 
     [Header("Ground Marker")]
     [SerializeField] private float markerHeight = 0.18f;
-    [SerializeField] private float markerScale = 0.12f;
-    [SerializeField] private float markerFontSize = 12f;
+    [Tooltip("Designed to render roughly twice the current capture-point text size.")]
+    [SerializeField] private float markerScale = 0.04f;
+    [SerializeField] private float markerFontSize = 36f;
 
     private LineRenderer lineRenderer;
     private TextMeshPro groundMarker;
@@ -30,45 +31,20 @@ public class BaseZone : MonoBehaviour
         if (spawnPoint == null) spawnPoint = transform;
 
         lineRenderer = GetComponent<LineRenderer>();
-        SetupVisuals();
+        if (lineRenderer != null) lineRenderer.enabled = false;
         CreateGroundMarker();
     }
 
     private void Update()
     {
         bool isActiveFrontlineBase = IsCurrentSectorBase();
-        if (lineRenderer != null) lineRenderer.enabled = isActiveFrontlineBase;
+        if (lineRenderer != null) lineRenderer.enabled = false;
         if (groundMarker != null) groundMarker.gameObject.SetActive(isActiveFrontlineBase);
 
         if (isActiveFrontlineBase)
         {
-            DrawCircle();
             UpdateGroundMarkerPosition();
         }
-    }
-
-    void SetupVisuals()
-    {
-        lineRenderer.useWorldSpace = true;
-        lineRenderer.loop = true;
-        lineRenderer.positionCount = circleSegments;
-        lineRenderer.startWidth = lineWidth;
-        lineRenderer.endWidth = lineWidth;
-        lineRenderer.alignment = LineAlignment.View;
-        lineRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-        lineRenderer.receiveShadows = false;
-
-        if (lineRenderer.sharedMaterial == null)
-        {
-            Shader defaultShader = Shader.Find("Universal Render Pipeline/Unlit");
-            if (defaultShader == null) defaultShader = Shader.Find("Sprites/Default");
-            lineRenderer.material = new Material(defaultShader);
-        }
-
-        Color teamColor = FactionVisuals.GetColor(controllingFaction);
-        lineRenderer.startColor = teamColor;
-        lineRenderer.endColor = teamColor;
-        DrawCircle();
     }
 
     private void CreateGroundMarker()
@@ -115,20 +91,15 @@ public class BaseZone : MonoBehaviour
         return sector.attackerBase == this || sector.defenderBase == this;
     }
 
-    void DrawCircle()
+    public bool IsCurrentBaseFor(Faction faction)
     {
-        if (lineRenderer == null || spawnPoint == null) return;
+        if (!IsCurrentSectorBase()) return false;
+        return controllingFaction == faction;
+    }
 
-        Vector3 center = spawnPoint.position;
-        float angle = 0f;
-
-        for (int i = 0; i < circleSegments; i++)
-        {
-            float x = Mathf.Sin(Mathf.Deg2Rad * angle) * radius;
-            float z = Mathf.Cos(Mathf.Deg2Rad * angle) * radius;
-            lineRenderer.SetPosition(i, new Vector3(center.x + x, center.y + 0.15f, center.z + z));
-            angle += 360f / circleSegments;
-        }
+    public Transform GetSpawnPoint()
+    {
+        return spawnPoint != null ? spawnPoint : transform;
     }
 
     void OnDrawGizmos()
