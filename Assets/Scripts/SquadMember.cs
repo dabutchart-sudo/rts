@@ -1,20 +1,22 @@
-using TMPro;
 using UnityEngine;
 
+/// <summary>
+/// Stores squad membership and displays squad identity as a ground ring rather than a
+/// floating letter. This keeps A/B/C/D visually separate from class and objective labels.
+/// </summary>
 public sealed class SquadMember : MonoBehaviour
 {
     [SerializeField] private string squadId;
     [SerializeField] private string squadName;
     [SerializeField] private string squadLetter;
 
-    [Header("Squad Indicator")]
+    [Header("Squad Ground Indicator")]
     [SerializeField] private bool showSquadIndicator = true;
-    [SerializeField] private float indicatorHeight = 2.7f;
-    [SerializeField] private float indicatorScale = 0.504f;
-    [SerializeField] private float normalFontSize = 8.4f;
-    [SerializeField] private float selectedFontSize = 10.2f;
+    [SerializeField] private float ringDiameter = 1.15f;
+    [SerializeField] private float ringHeight = 0.04f;
 
-    private TextMeshPro indicatorText;
+    private GameObject squadRing;
+    private Renderer squadRingRenderer;
     private SelectableUnit selectableUnit;
 
     public Squad Squad { get; private set; }
@@ -34,65 +36,80 @@ public sealed class SquadMember : MonoBehaviour
         squadName = squad != null ? squad.DisplayName : string.Empty;
         squadLetter = GetSquadLetter(squadName);
 
-        CreateOrRefreshIndicator();
+        DisableLegacyFloatingIndicator();
+        CreateOrRefreshGroundRing();
     }
 
     private void LateUpdate()
     {
-        if (indicatorText == null) return;
+        if (squadRing == null) return;
 
         bool shouldShow = showSquadIndicator && IsPlayerFactionUnit();
-        indicatorText.gameObject.SetActive(shouldShow);
+        squadRing.SetActive(shouldShow);
 
         if (!shouldShow) return;
 
-        bool selected = selectableUnit != null && selectableUnit.isSelected;
-        indicatorText.text = selected ? $"[{squadLetter}]" : squadLetter;
-        indicatorText.fontSize = selected ? selectedFontSize : normalFontSize;
+        float selectedScale = selectableUnit != null && selectableUnit.isSelected ? 1.28f : 1f;
+        squadRing.transform.localScale = new Vector3(ringDiameter * selectedScale, ringHeight, ringDiameter * selectedScale);
     }
 
-    private void CreateOrRefreshIndicator()
+    private void DisableLegacyFloatingIndicator()
+    {
+        Transform legacy = transform.Find("SquadIndicator");
+        if (legacy != null)
+        {
+            legacy.gameObject.SetActive(false);
+        }
+    }
+
+    private void CreateOrRefreshGroundRing()
     {
         if (!showSquadIndicator || Squad == null || string.IsNullOrEmpty(squadLetter))
         {
-            if (indicatorText != null)
-            {
-                indicatorText.gameObject.SetActive(false);
-            }
+            if (squadRing != null) squadRing.SetActive(false);
             return;
         }
 
-        if (indicatorText == null)
+        Transform existing = transform.Find("SquadGroundRing");
+        if (existing != null)
         {
-            Transform existing = transform.Find("SquadIndicator");
-            if (existing != null)
-            {
-                indicatorText = existing.GetComponent<TextMeshPro>();
-            }
+            squadRing = existing.gameObject;
+            squadRingRenderer = squadRing.GetComponent<Renderer>();
         }
 
-        if (indicatorText == null)
+        if (squadRing == null)
         {
-            GameObject indicatorObject = new GameObject("SquadIndicator");
-            indicatorObject.transform.SetParent(transform, false);
-            indicatorObject.transform.localPosition = new Vector3(0f, indicatorHeight, 0f);
-            indicatorObject.transform.localRotation = Quaternion.identity;
-            indicatorObject.transform.localScale = Vector3.one * indicatorScale;
+            squadRing = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            squadRing.name = "SquadGroundRing";
+            squadRing.transform.SetParent(transform, false);
+            squadRing.transform.localPosition = new Vector3(0f, 0.04f, 0f);
+            squadRing.transform.localRotation = Quaternion.identity;
+            squadRing.transform.localScale = new Vector3(ringDiameter, ringHeight, ringDiameter);
 
-            indicatorText = indicatorObject.AddComponent<TextMeshPro>();
-            indicatorText.alignment = TextAlignmentOptions.Center;
-            indicatorText.fontSize = normalFontSize;
-            indicatorText.fontStyle = FontStyles.Bold;
-            indicatorText.color = Color.white;
-            indicatorText.enableAutoSizing = false;
-            indicatorText.raycastTarget = false;
-            indicatorText.sortingOrder = 20;
+            Collider ringCollider = squadRing.GetComponent<Collider>();
+            if (ringCollider != null) Destroy(ringCollider);
 
-            indicatorObject.AddComponent<Billboard>();
+            squadRingRenderer = squadRing.GetComponent<Renderer>();
         }
 
-        indicatorText.text = squadLetter;
-        indicatorText.gameObject.SetActive(IsPlayerFactionUnit());
+        if (squadRingRenderer != null)
+        {
+            squadRingRenderer.material.color = GetSquadColor(squadLetter);
+        }
+
+        squadRing.SetActive(IsPlayerFactionUnit());
+    }
+
+    private Color GetSquadColor(string letter)
+    {
+        switch (letter)
+        {
+            case "A": return new Color(0.15f, 0.8f, 1f);
+            case "B": return new Color(1f, 0.65f, 0.1f);
+            case "C": return new Color(0.35f, 1f, 0.35f);
+            case "D": return new Color(0.85f, 0.35f, 1f);
+            default: return Color.white;
+        }
     }
 
     private string GetSquadLetter(string displayName)
