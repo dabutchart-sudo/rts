@@ -55,6 +55,19 @@ public class UnitSpawner : MonoBehaviour
         Debug.Log($"🌊 {teamName} REINFORCEMENT: Requested {count}, deployed {spawned}, alive Assaults {alive}/{cap}.");
     }
 
+    public int ReplenishAssaultsForSectorStart()
+    {
+        int cap = isDefenderSpawner ? GetDefenderAssaultCap() : GetAttackerAssaultCap();
+        int before = GetAliveAssaultCount();
+        int missing = Mathf.Max(0, cap - before);
+        int spawned = SpawnAssaultsUpToLimit(missing, false);
+        int after = GetAliveAssaultCount();
+        string teamName = isDefenderSpawner ? "DEFENDER" : "ATTACKER";
+
+        Debug.Log($"🚩 {teamName} SECTOR START: Preserved {before} surviving Assaults, replenished {spawned}, ready {after}/{cap}.");
+        return spawned;
+    }
+
     void Update()
     {
         if (!hasSpawned) return;
