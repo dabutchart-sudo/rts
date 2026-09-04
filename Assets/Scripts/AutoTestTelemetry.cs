@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 public sealed class AutoTestTelemetry : MonoBehaviour
 {
@@ -43,9 +44,8 @@ public sealed class AutoTestTelemetry : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void EnsureRuntimeTelemetry()
     {
-        // The telemetry object is scene-local. Unity can invoke this callback for the
-        // new scene before the old scene object's OnDestroy has cleared the static
-        // reference, so never trust 'instance' alone here.
+        if (instance != null) return;
+
         AutoTestTelemetry existing = FindAnyObjectByType<AutoTestTelemetry>(FindObjectsInactive.Include);
         if (existing != null)
         {
@@ -53,7 +53,6 @@ public sealed class AutoTestTelemetry : MonoBehaviour
             return;
         }
 
-        instance = null;
         GameObject host = new GameObject("AutoTestTelemetry");
         host.AddComponent<AutoTestTelemetry>();
     }
@@ -66,14 +65,15 @@ public sealed class AutoTestTelemetry : MonoBehaviour
 
     private void Awake()
     {
-        AutoTestTelemetry existing = FindAnyObjectByType<AutoTestTelemetry>(FindObjectsInactive.Include);
-        if (existing != null && existing != this)
+        if (instance != null && instance != this)
         {
             Destroy(gameObject);
             return;
         }
 
         instance = this;
+        DontDestroyOnLoad(gameObject);
+        SceneManager.sceneLoaded += OnSceneLoaded;
 
         if (string.IsNullOrEmpty(runId))
         {
@@ -83,6 +83,16 @@ public sealed class AutoTestTelemetry : MonoBehaviour
 
     private void Start()
     {
+        BindToCurrentMatch();
+    }
+
+    private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        BindToCurrentMatch();
+    }
+
+    private void BindToCurrentMatch()
+    {
         gameManager = GameManager.Instance;
 
         if (!IsAutoTestActive())
@@ -91,6 +101,7 @@ public sealed class AutoTestTelemetry : MonoBehaviour
             return;
         }
 
+        enabled = true;
         ResetMatchState();
 
         Debug.Log($"TEST TELEMETRY: Run {runId}, match {GetMatchNumber()} started.");
@@ -136,6 +147,8 @@ public sealed class AutoTestTelemetry : MonoBehaviour
 
     private void OnDestroy()
     {
+        SceneManager.sceneLoaded -= OnSceneLoaded;
+
         if (instance == this)
         {
             instance = null;
