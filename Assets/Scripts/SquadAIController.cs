@@ -37,6 +37,17 @@ public sealed class SquadAIController : MonoBehaviour
     [SerializeField] private float currentObjectiveBonus = 10f;
     [SerializeField] private float objectiveCrowdingPenalty = 7f;
 
+    [Header("Captured Point Garrisons")]
+    [Tooltip("When enabled, one attacker squad remains on each captured point while other squads continue the attack.")]
+    [SerializeField] private bool enableCapturedPointGarrisons = true;
+
+    [Tooltip("A garrison is released once attacker control falls to or below this capture progress.")]
+    [Range(-100f, 100f)]
+    [SerializeField] private float garrisonReleaseProgress = 0f;
+
+    [Tooltip("Write garrison assignment and release events to the Console.")]
+    [SerializeField] private bool logGarrisonChanges = true;
+
     [Header("Squad Strength")]
     [Tooltip("Squads at or above this member count are treated as healthy.")]
     [SerializeField] private int healthyMemberThreshold = 3;
@@ -86,6 +97,8 @@ public sealed class SquadAIController : MonoBehaviour
 
     private readonly Dictionary<string, float> nextThinkTimes = new Dictionary<string, float>();
     private readonly Dictionary<string, SquadStrengthState> lastStrengthStates = new Dictionary<string, SquadStrengthState>();
+    private readonly Dictionary<string, string> attackerGarrisonByPoint = new Dictionary<string, string>();
+    private int garrisonSectorIndex = -1;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void EnsureRuntimeController()
@@ -145,6 +158,25 @@ public sealed class SquadAIController : MonoBehaviour
         {
             squad.ClearStrategicObjective();
             return null;
+        }
+
+        if (isAttacker && enableCapturedPointGarrisons)
+        {
+            RefreshAttackerGarrisons(activePoints, sectorIndex);
+            CapturePoint garrisonPoint = GetGarrisonPointForSquad(squad, activePoints, sectorIndex);
+
+            if (garrisonPoint != null)
+            {
+                Transform previousObjective = squad.StrategicObjective;
+                squad.AssignStrategicObjective(garrisonPoint.transform, sectorIndex);
+
+                if (logObjectiveChanges && previousObjective != garrisonPoint.transform)
+                {
+                    Debug.Log($"Squad AI: Attacker {squad.DisplayName} [GARRISON/{GetStrengthState(squad)}] -> {garrisonPoint.capturePointName}");
+                }
+
+                return garrisonPoint.transform;
+            }
         }
 
         bool strengthChanged = RecordAndCheckStrengthChange(squad);
@@ -213,6 +245,15 @@ public sealed class SquadAIController : MonoBehaviour
         List<CapturePoint> activePoints = GetActivePoints(GameManager.Instance.sectors[sectorIndex]);
         bool isAttacker = squad.Faction == Faction.Attacker;
 
+        if (isAttacker && enableCapturedPointGarrisons)
+        {
+            CapturePoint garrisonPoint = GetGarrisonPointForSquad(squad, activePoints, sectorIndex);
+            if (garrisonPoint != null)
+            {
+                report.Append($"\nDuty GARRISON: {garrisonPoint.capturePointName}");
+            }
+        }
+
         foreach (CapturePoint point in activePoints)
         {
             float score = ScoreObjective(squad, point, activePoints, isAttacker, point.transform == squad.StrategicObjective);
@@ -256,6 +297,180 @@ public sealed class SquadAIController : MonoBehaviour
         if (squad == null || string.IsNullOrEmpty(squad.SquadId)) return 0f;
         if (!nextThinkTimes.TryGetValue(squad.SquadId, out float nextThink)) return 0f;
         return Mathf.Max(0f, nextThink - Time.time);
+    }
+
+    private void RefreshAttackerGarrisons(List<CapturePoint> activePoints, int sectorIndex)
+    {
+        if (!enableCapturedPointGarrisons || SquadManager.Instance == null)
+        {
+            attackerGarrisonByPoint.Clear();
+            garrisonSectorIndex = sectorIndex;
+            return;
+        }
+
+        if (garrisonSectorIndex != sectorIndex)
+        {
+            attackerGarrisonByPoint.Clear();
+            garrisonSectorIndex = sectorIndex;
+        }
+
+        List<string> keysToRemove = new List<string>();
+
+        foreach (KeyValuePair<string, string> assignment in attackerGarrisonByPoint)
+        {
+            CapturePoint point = FindPointByGarrisonKey(activePoints, sectorIndex, assignment.Key);
+            Squad assignedSquad = FindAttackerSquadById(assignment.Value);
+
+            bool pointLost = point == null || point.captureProgress <= garrisonReleaseProgress;
+            bool squadUnavailable = assignedSquad == null || assignedSquad.MemberCount <= 0;
+
+            if (pointLost || squadUnavailable)
+            {
+                keysToRemove.Add(assignment.Key);
+
+                if (logGarrisonChanges)
+                {
+                    string pointName = point != null ? point.capturePointName : assignment.Key;
+                    string squadName = assignedSquad != null ? assignedSquad.DisplayName : assignment.Value;
+                    Debug.Log($"Squad AI: Released attacker garrison {squadName} from {pointName}.");
+                }
+            }
+        }
+
+        foreach (string key in keysToRemove)
+        {
+            attackerGarrisonByPoint.Remove(key);
+        }
+
+        HashSet<string> assignedSquadIds = new HashSet<string>(attackerGarrisonByPoint.Values);
+
+        foreach (CapturePoint point in activePoints)
+        {
+            if (point == null || point.captureProgress < 99.99f) continue;
+
+            string pointKey = BuildGarrisonKey(sectorIndex, point);
+            if (attackerGarrisonByPoint.ContainsKey(pointKey)) continue;
+
+            Squad candidate = ChooseGarrisonSquad(point, assignedSquadIds);
+            if (candidate == null) continue;
+
+            attackerGarrisonByPoint[pointKey] = candidate.SquadId;
+            assignedSquadIds.Add(candidate.SquadId);
+
+            if (logGarrisonChanges)
+            {
+                Debug.Log($"Squad AI: Attacker {candidate.DisplayName} assigned as GARRISON for {point.capturePointName} ({candidate.MemberCount} members).");
+            }
+        }
+    }
+
+    private Squad ChooseGarrisonSquad(CapturePoint point, HashSet<string> alreadyAssignedSquadIds)
+    {
+        if (point == null || SquadManager.Instance == null) return null;
+
+        Squad best = null;
+        float bestScore = float.NegativeInfinity;
+
+        foreach (Squad squad in SquadManager.Instance.AttackerSquads)
+        {
+            if (squad == null || squad.MemberCount <= 0) continue;
+            if (alreadyAssignedSquadIds.Contains(squad.SquadId)) continue;
+
+            float score = 0f;
+
+            if (squad.StrategicObjective == point.transform)
+            {
+                score += 1000f;
+            }
+
+            if (GetStrengthState(squad) == SquadStrengthState.Healthy)
+            {
+                score += 200f;
+            }
+
+            score += CountAssaultMembers(squad) * 25f;
+            score -= Vector3.Distance(GetSquadCentre(squad), point.transform.position);
+
+            if (score > bestScore)
+            {
+                best = squad;
+                bestScore = score;
+            }
+        }
+
+        return best;
+    }
+
+    private int CountAssaultMembers(Squad squad)
+    {
+        if (squad == null) return 0;
+
+        int count = 0;
+        foreach (GameObject member in squad.Members)
+        {
+            if (member != null && UnitClassIdentity.GetClass(member) == UnitClass.Assault)
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private CapturePoint GetGarrisonPointForSquad(Squad squad, List<CapturePoint> activePoints, int sectorIndex)
+    {
+        if (squad == null || squad.Faction != Faction.Attacker) return null;
+        if (garrisonSectorIndex != sectorIndex) return null;
+
+        foreach (CapturePoint point in activePoints)
+        {
+            if (point == null) continue;
+
+            string key = BuildGarrisonKey(sectorIndex, point);
+            if (attackerGarrisonByPoint.TryGetValue(key, out string squadId) && squadId == squad.SquadId)
+            {
+                return point;
+            }
+        }
+
+        return null;
+    }
+
+    private CapturePoint FindPointByGarrisonKey(List<CapturePoint> activePoints, int sectorIndex, string key)
+    {
+        foreach (CapturePoint point in activePoints)
+        {
+            if (point != null && BuildGarrisonKey(sectorIndex, point) == key)
+            {
+                return point;
+            }
+        }
+
+        return null;
+    }
+
+    private Squad FindAttackerSquadById(string squadId)
+    {
+        if (string.IsNullOrEmpty(squadId) || SquadManager.Instance == null) return null;
+
+        foreach (Squad squad in SquadManager.Instance.AttackerSquads)
+        {
+            if (squad != null && squad.SquadId == squadId)
+            {
+                return squad;
+            }
+        }
+
+        return null;
+    }
+
+    private string BuildGarrisonKey(int sectorIndex, CapturePoint point)
+    {
+        string pointName = point != null && !string.IsNullOrEmpty(point.capturePointName)
+            ? point.capturePointName
+            : (point != null ? point.name : "Unknown");
+
+        return $"{sectorIndex}:{pointName}";
     }
 
     private bool RecordAndCheckStrengthChange(Squad squad)
