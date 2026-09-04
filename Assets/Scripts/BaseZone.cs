@@ -6,6 +6,7 @@ public class BaseZone : MonoBehaviour
 {
     [Header("Base Identification")]
     public string baseName = "Forward Operating Base";
+    [Tooltip("Legacy/fallback value only. Runtime faction is resolved from the sector's attackerBase/defenderBase assignment.")]
     public Faction controllingFaction = Faction.Attacker;
 
     [Header("Spawn Reference")]
@@ -43,6 +44,7 @@ public class BaseZone : MonoBehaviour
 
         if (isActiveFrontlineBase)
         {
+            RefreshGroundMarkerIdentity();
             UpdateGroundMarkerPosition();
         }
     }
@@ -59,15 +61,24 @@ public class BaseZone : MonoBehaviour
             groundMarker = markerObject.AddComponent<TextMeshPro>();
         }
 
-        groundMarker.text = controllingFaction == Faction.Attacker ? "A" : "D";
         groundMarker.alignment = TextAlignmentOptions.Center;
         groundMarker.fontSize = markerFontSize;
         groundMarker.fontStyle = FontStyles.Bold;
-        groundMarker.color = FactionVisuals.GetColor(controllingFaction);
         groundMarker.enableAutoSizing = false;
         groundMarker.raycastTarget = false;
         groundMarker.sortingOrder = 5;
+
+        RefreshGroundMarkerIdentity();
         UpdateGroundMarkerPosition();
+    }
+
+    private void RefreshGroundMarkerIdentity()
+    {
+        if (groundMarker == null) return;
+
+        Faction resolvedFaction = GetResolvedFaction();
+        groundMarker.text = resolvedFaction == Faction.Defender ? "D" : "A";
+        groundMarker.color = FactionVisuals.GetColor(resolvedFaction);
     }
 
     private void UpdateGroundMarkerPosition()
@@ -93,8 +104,32 @@ public class BaseZone : MonoBehaviour
 
     public bool IsCurrentBaseFor(Faction faction)
     {
-        if (!IsCurrentSectorBase()) return false;
-        return controllingFaction == faction;
+        if (GameManager.Instance == null || GameManager.Instance.sectors == null) return false;
+
+        int index = GameManager.Instance.currentSectorIndex;
+        if (index < 0 || index >= GameManager.Instance.sectors.Length) return false;
+
+        Sector sector = GameManager.Instance.sectors[index];
+        if (sector == null) return false;
+
+        if (faction == Faction.Attacker) return sector.attackerBase == this;
+        if (faction == Faction.Defender) return sector.defenderBase == this;
+        return false;
+    }
+
+    public Faction GetResolvedFaction()
+    {
+        if (GameManager.Instance != null && GameManager.Instance.sectors != null)
+        {
+            foreach (Sector sector in GameManager.Instance.sectors)
+            {
+                if (sector == null) continue;
+                if (sector.attackerBase == this) return Faction.Attacker;
+                if (sector.defenderBase == this) return Faction.Defender;
+            }
+        }
+
+        return controllingFaction;
     }
 
     public Transform GetSpawnPoint()
