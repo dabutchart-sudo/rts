@@ -167,10 +167,10 @@ public sealed class SquadAIController : MonoBehaviour
 
             if (garrisonPoint != null)
             {
-                Transform previousObjective = squad.StrategicObjective;
+                Transform previousGarrisonObjective = squad.StrategicObjective;
                 squad.AssignStrategicObjective(garrisonPoint.transform, sectorIndex);
 
-                if (logObjectiveChanges && previousObjective != garrisonPoint.transform)
+                if (logObjectiveChanges && previousGarrisonObjective != garrisonPoint.transform)
                 {
                     Debug.Log($"Squad AI: Attacker {squad.DisplayName} [GARRISON/{GetStrengthState(squad)}] -> {garrisonPoint.capturePointName}");
                 }
