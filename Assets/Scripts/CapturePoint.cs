@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using System.Collections.Generic;
 using TMPro;
@@ -10,6 +11,97 @@ public class PurchasableUnit
     public GameObject unitPrefab;
     public int xpCost = 500;
     public Sprite unitIcon;
+
+    [Header("Unit Classification")]
+    [Tooltip("Enable this to stop using legacy name inference and explicitly define what this purchasable unit is.")]
+    public bool useExplicitClassification = false;
+
+    public UnitCategory unitCategory = UnitCategory.Infantry;
+    public UnitClass unitClass = UnitClass.Assault;
+
+    public UnitCategory GetResolvedCategory()
+    {
+        if (useExplicitClassification)
+        {
+            return unitCategory;
+        }
+
+        string identityText = GetIdentityText();
+
+        if (ContainsAny(identityText, "tank", "vehicle", "apc", "ifv", "jeep", "truck", "car"))
+        {
+            return UnitCategory.Vehicle;
+        }
+
+        if (TryInferInfantryClass(identityText, out _))
+        {
+            return UnitCategory.Infantry;
+        }
+
+        return UnitCategory.Other;
+    }
+
+    public bool TryGetResolvedInfantryClass(out UnitClass resolvedClass)
+    {
+        if (useExplicitClassification)
+        {
+            resolvedClass = unitClass;
+            return unitCategory == UnitCategory.Infantry;
+        }
+
+        return TryInferInfantryClass(GetIdentityText(), out resolvedClass);
+    }
+
+    private string GetIdentityText()
+    {
+        string prefabName = unitPrefab != null ? unitPrefab.name : string.Empty;
+        return $"{unitDisplayName} {prefabName}";
+    }
+
+    private static bool TryInferInfantryClass(string value, out UnitClass resolvedClass)
+    {
+        if (ContainsAny(value, "engineer"))
+        {
+            resolvedClass = UnitClass.Engineer;
+            return true;
+        }
+
+        if (ContainsAny(value, "recon", "sniper", "scout"))
+        {
+            resolvedClass = UnitClass.Recon;
+            return true;
+        }
+
+        if (ContainsAny(value, "support", "medic"))
+        {
+            resolvedClass = UnitClass.Support;
+            return true;
+        }
+
+        if (ContainsAny(value, "assault", "rifleman"))
+        {
+            resolvedClass = UnitClass.Assault;
+            return true;
+        }
+
+        resolvedClass = UnitClass.Assault;
+        return false;
+    }
+
+    private static bool ContainsAny(string value, params string[] terms)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return false;
+
+        foreach (string term in terms)
+        {
+            if (value.IndexOf(term, StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }
 
 public class CapturePoint : MonoBehaviour
@@ -93,7 +185,7 @@ public class CapturePoint : MonoBehaviour
     public void LockCapturePoint()
     {
         isLocked = true;
-        captureProgress = 100f; // Permanently 100% Attacker captured for this match
+        captureProgress = 100f;
         activeAttackers.Clear();
         activeDefenders.Clear();
         attackerCount = 0;
@@ -190,9 +282,6 @@ public class CapturePoint : MonoBehaviour
         }
     }
 
-    // --- XP STORE METHODS ---
-
-    // A quick helper method for the UI to ask: "What can I build here?"
     public PurchasableUnit[] GetAvailableUnits(Faction playerFaction)
     {
         if (playerFaction == Faction.Attacker && captureProgress >= 100f)
@@ -203,7 +292,6 @@ public class CapturePoint : MonoBehaviour
         return new PurchasableUnit[0];
     }
 
-    // The Store script will call this to get a safe location to drop the new unit
     public Transform GetNextAvailableSpawnPoint()
     {
         if (purchaseSpawnPoints == null || purchaseSpawnPoints.Length == 0) return transform;
@@ -216,15 +304,12 @@ public class CapturePoint : MonoBehaviour
         return spawnPoint;
     }
 
-    // Checks if the player's faction currently owns this point
     public bool IsControlledBy(Faction requestingFaction)
     {
         if (requestingFaction == Faction.Attacker && captureProgress >= 100f) return true;
         if (requestingFaction == Faction.Defender && captureProgress <= -100f) return true;
         return false;
     }
-
-    // --- VISUAL UPDATES ---
 
     void UpdatePointColor()
     {
