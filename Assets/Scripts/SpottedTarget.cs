@@ -52,7 +52,7 @@ public sealed class SpottedTarget : MonoBehaviour
         marker.transform.localScale = Vector3.one * 0.45f;
 
         TextMeshPro text = marker.AddComponent<TextMeshPro>();
-        text.text = "◆";
+        text.text = "!";
         text.alignment = TextAlignmentOptions.Center;
         text.fontSize = 9f;
         text.fontStyle = FontStyles.Bold;
