@@ -3,7 +3,7 @@ using UnityEngine;
 
 /// <summary>
 /// Authoritative world-space class marker. The displayed letter always comes from
-/// UnitClassIdentity, so prefab text can no longer disagree with the unit's real class.
+/// UnitClassIdentity, while colour always comes from the shared faction palette.
 /// </summary>
 public sealed class UnitClassMarker : MonoBehaviour
 {
@@ -24,22 +24,14 @@ public sealed class UnitClassMarker : MonoBehaviour
 
     private void LateUpdate()
     {
-        if (identity == null)
-        {
-            identity = GetComponent<UnitClassIdentity>();
-        }
-
+        if (identity == null) identity = GetComponent<UnitClassIdentity>();
         Refresh();
     }
 
     private void CreateMarker()
     {
         Transform existing = transform.Find("UnitClassMarker");
-        if (existing != null)
-        {
-            markerText = existing.GetComponent<TextMeshPro>();
-        }
-
+        if (existing != null) markerText = existing.GetComponent<TextMeshPro>();
         if (markerText != null) return;
 
         GameObject markerObject = new GameObject("UnitClassMarker");
@@ -52,11 +44,9 @@ public sealed class UnitClassMarker : MonoBehaviour
         markerText.alignment = TextAlignmentOptions.Center;
         markerText.fontSize = fontSize;
         markerText.fontStyle = FontStyles.Bold;
-        markerText.color = Color.white;
         markerText.enableAutoSizing = false;
         markerText.raycastTarget = false;
         markerText.sortingOrder = 30;
-
         markerObject.AddComponent<Billboard>();
     }
 
@@ -66,21 +56,18 @@ public sealed class UnitClassMarker : MonoBehaviour
         foreach (TMP_Text label in labels)
         {
             if (label == null || label == markerText) continue;
-
             string value = label.text != null ? label.text.Trim() : string.Empty;
-            if (value == "A" || value == "E" || value == "R" || value == "S")
-            {
-                label.gameObject.SetActive(false);
-            }
+            if (value == "A" || value == "E" || value == "R" || value == "S") label.gameObject.SetActive(false);
         }
     }
 
     private void Refresh()
     {
         if (markerText == null) return;
-
         UnitClass unitClass = identity != null ? identity.Class : UnitClass.Assault;
         markerText.text = GetClassLetter(unitClass);
+        markerText.color = CompareTag("Attacker") ? FactionVisuals.AttackerColor :
+                           CompareTag("Defender") ? FactionVisuals.DefenderColor : Color.white;
     }
 
     private string GetClassLetter(UnitClass unitClass)
@@ -97,13 +84,8 @@ public sealed class UnitClassMarker : MonoBehaviour
     public static UnitClassMarker Ensure(GameObject unit)
     {
         if (unit == null) return null;
-
         UnitClassMarker marker = unit.GetComponent<UnitClassMarker>();
-        if (marker == null)
-        {
-            marker = unit.AddComponent<UnitClassMarker>();
-        }
-
+        if (marker == null) marker = unit.AddComponent<UnitClassMarker>();
         return marker;
     }
 }
