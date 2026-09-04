@@ -1,3 +1,4 @@
+using TMPro;
 using UnityEngine;
 using UnityEngine.AI;
 
@@ -17,6 +18,10 @@ public sealed class ReconUnitProfile : MonoBehaviour
     [Header("Recon Movement Profile")]
     [Tooltip("How far Recon tries to stop from its squad objective. This keeps it behind the Assault element instead of standing on the capture point.")]
     [SerializeField] private float objectiveStandoffDistance = 14f;
+
+    [Header("Recon Visual Identity")]
+    [Tooltip("Replace existing one-letter class labels on the reused infantry visual with R.")]
+    [SerializeField] private bool updateClassMarker = true;
 
     private bool applied;
 
@@ -44,7 +49,46 @@ public sealed class ReconUnitProfile : MonoBehaviour
             agent.stoppingDistance = Mathf.Max(agent.stoppingDistance, objectiveStandoffDistance);
         }
 
+        ApplyReconName();
+
+        if (updateClassMarker)
+        {
+            ApplyReconMarker();
+        }
+
         applied = true;
+    }
+
+    private void ApplyReconName()
+    {
+        if (CompareTag("Attacker"))
+        {
+            gameObject.name = "Recon_Attacker";
+        }
+        else if (CompareTag("Defender"))
+        {
+            gameObject.name = "Recon_Defender";
+        }
+        else
+        {
+            gameObject.name = "Recon";
+        }
+    }
+
+    private void ApplyReconMarker()
+    {
+        TMP_Text[] labels = GetComponentsInChildren<TMP_Text>(true);
+
+        foreach (TMP_Text label in labels)
+        {
+            if (label == null) continue;
+
+            string value = label.text != null ? label.text.Trim() : string.Empty;
+            if (value == "A" || value == "E" || value == "R" || value == "S")
+            {
+                label.text = "R";
+            }
+        }
     }
 
     public static ReconUnitProfile ApplyIfRecon(GameObject unit)
