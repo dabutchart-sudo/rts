@@ -15,6 +15,13 @@ public class AICommander : MonoBehaviour
     [Tooltip("How often the AI checks the store to make purchases")]
     public float decisionInterval = 4f;
 
+    [Header("Specialist Composition")]
+    [Tooltip("When enabled, the AI strongly prioritises deploying one of each available specialist class before returning to normal purchases.")]
+    public bool prioritiseInitialSpecialistMix = true;
+
+    [Tooltip("Write specialist-priority decisions to the Console.")]
+    public bool logSpecialistPriorities = true;
+
     [Header("Purchase Categories")]
     [Tooltip("Vehicles are not part of the current infantry-only prototype. Leave disabled until vehicle gameplay is intentionally introduced.")]
     public bool allowVehiclePurchases = false;
@@ -58,29 +65,119 @@ public class AICommander : MonoBehaviour
 
     private void MakeTacticalPurchase()
     {
+        if (GameManager.Instance.sectors == null ||
+            GameManager.Instance.currentSectorIndex < 0 ||
+            GameManager.Instance.currentSectorIndex >= GameManager.Instance.sectors.Length)
+        {
+            return;
+        }
+
         Sector currentSector = GameManager.Instance.sectors[GameManager.Instance.currentSectorIndex];
+        List<PurchaseOption> affordableOptions = BuildAffordableOptions(currentSector);
+
+        if (affordableOptions.Count == 0) return;
+
+        if (prioritiseInitialSpecialistMix && TryChooseMissingSpecialist(affordableOptions, out PurchaseOption specialistChoice))
+        {
+            ExecutePurchase(specialistChoice.unit, specialistChoice.sourceBase);
+            return;
+        }
+
+        int randomIndex = Random.Range(0, affordableOptions.Count);
+        PurchaseOption chosenOption = affordableOptions[randomIndex];
+        ExecutePurchase(chosenOption.unit, chosenOption.sourceBase);
+    }
+
+    private List<PurchaseOption> BuildAffordableOptions(Sector currentSector)
+    {
         List<PurchaseOption> affordableOptions = new List<PurchaseOption>();
+
+        if (currentSector == null || currentSector.capturePoints == null)
+        {
+            return affordableOptions;
+        }
 
         foreach (CapturePoint cp in currentSector.capturePoints)
         {
             if (cp == null || !cp.IsControlledBy(aiFaction)) continue;
 
             PurchasableUnit[] availableUnits = cp.GetAvailableUnits(aiFaction);
+            if (availableUnits == null) continue;
+
             foreach (PurchasableUnit unit in availableUnits)
             {
-                if (unit == null || aiCommandXP < unit.xpCost) continue;
+                if (unit == null || unit.unitPrefab == null) continue;
+                if (aiCommandXP < unit.xpCost) continue;
                 if (!IsPurchaseCategoryAllowed(unit)) continue;
                 if (!IsWithinSpecialistDeploymentLimit(unit)) continue;
 
-                affordableOptions.Add(new PurchaseOption { unit = unit, sourceBase = cp });
+                affordableOptions.Add(new PurchaseOption
+                {
+                    unit = unit,
+                    sourceBase = cp
+                });
             }
         }
 
-        if (affordableOptions.Count == 0) return;
+        return affordableOptions;
+    }
 
-        int randomIndex = Random.Range(0, affordableOptions.Count);
-        PurchaseOption chosenOption = affordableOptions[randomIndex];
-        ExecutePurchase(chosenOption.unit, chosenOption.sourceBase);
+    private bool TryChooseMissingSpecialist(List<PurchaseOption> options, out PurchaseOption chosen)
+    {
+        chosen = default;
+
+        SpecialistDeploymentTracker tracker = SpecialistDeploymentTracker.EnsureInstance();
+        if (tracker == null) return false;
+
+        List<PurchaseOption> missingSpecialists = new List<PurchaseOption>();
+
+        foreach (PurchaseOption option in options)
+        {
+            PurchasableUnit unit = option.unit;
+            if (unit == null || unit.GetResolvedCategory() != UnitCategory.Infantry) continue;
+            if (!unit.TryGetResolvedInfantryClass(out UnitClass unitClass)) continue;
+            if (unitClass == UnitClass.Assault) continue;
+
+            if (tracker.GetDeploymentCount(aiFaction, unitClass) == 0)
+            {
+                missingSpecialists.Add(option);
+            }
+        }
+
+        if (missingSpecialists.Count == 0) return false;
+
+        // Prefer the cheapest missing specialist so the AI establishes a balanced specialist
+        // presence as early as possible instead of waiting for a more expensive option.
+        int bestCost = int.MaxValue;
+        List<PurchaseOption> cheapestMissing = new List<PurchaseOption>();
+
+        foreach (PurchaseOption option in missingSpecialists)
+        {
+            int cost = option.unit != null ? option.unit.xpCost : int.MaxValue;
+
+            if (cost < bestCost)
+            {
+                bestCost = cost;
+                cheapestMissing.Clear();
+                cheapestMissing.Add(option);
+            }
+            else if (cost == bestCost)
+            {
+                cheapestMissing.Add(option);
+            }
+        }
+
+        if (cheapestMissing.Count == 0) return false;
+
+        chosen = cheapestMissing[Random.Range(0, cheapestMissing.Count)];
+
+        if (logSpecialistPriorities && chosen.unit != null &&
+            chosen.unit.TryGetResolvedInfantryClass(out UnitClass chosenClass))
+        {
+            Debug.Log($"🤖 AI COMMANDER ({aiFaction}): Prioritising first {chosenClass} deployment while specialist mix is incomplete.");
+        }
+
+        return true;
     }
 
     private bool IsPurchaseCategoryAllowed(PurchasableUnit unit)
@@ -114,6 +211,8 @@ public class AICommander : MonoBehaviour
 
     private void ExecutePurchase(PurchasableUnit unit, CapturePoint sourceBase)
     {
+        if (unit == null || sourceBase == null || unit.unitPrefab == null) return;
+
         UnitClass resolvedClass = UnitClass.Assault;
         bool isSpecialist = unit.GetResolvedCategory() == UnitCategory.Infantry &&
                             unit.TryGetResolvedInfantryClass(out resolvedClass) &&
