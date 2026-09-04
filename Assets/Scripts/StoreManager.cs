@@ -15,15 +15,13 @@ public class StoreManager : MonoBehaviour
         public Button button;
         public TextMeshProUGUI buttonText;
         public PurchasableUnit unit;
-        public CapturePoint captureSource;
-        public BaseZone baseSource;
+        public SpawnSource source;
     }
 
     private class StoreRow
     {
         public GameObject rowObject;
-        public CapturePoint captureSource;
-        public BaseZone baseSource;
+        public SpawnSource source;
     }
 
     private readonly List<StoreButton> allStoreButtons = new List<StoreButton>();
@@ -35,7 +33,6 @@ public class StoreManager : MonoBehaviour
     void Update()
     {
         if (GameManager.Instance == null) return;
-
         if (GameManager.Instance.playerFaction == Faction.None) return;
 
         if (!isInitialized || initializedSectorIndex != GameManager.Instance.currentSectorIndex)
@@ -55,34 +52,20 @@ public class StoreManager : MonoBehaviour
     {
         ClearStoreUI();
 
-        if (GameManager.Instance == null || GameManager.Instance.sectors == null) return;
+        if (GameManager.Instance == null) return;
 
         Faction playerFaction = GameManager.Instance.playerFaction;
-        int sectorIndex = GameManager.Instance.currentSectorIndex;
-        if (sectorIndex < 0 || sectorIndex >= GameManager.Instance.sectors.Length) return;
+        List<PurchasableUnit> catalog = SpawnSourceResolver.GetCurrentSectorCatalog(playerFaction);
+        List<SpawnSource> sources = SpawnSourceResolver.GetCurrentSectorSources(playerFaction, false);
 
-        Sector sector = GameManager.Instance.sectors[sectorIndex];
-        if (sector == null) return;
-
-        BaseZone playerBase = playerFaction == Faction.Attacker ? sector.attackerBase : sector.defenderBase;
-        List<PurchasableUnit> sectorCatalog = BuildSectorCatalog(sector, playerFaction);
-
-        if (playerBase != null && sectorCatalog.Count > 0)
+        foreach (SpawnSource source in sources)
         {
-            CreateBaseRow(playerBase, sectorCatalog);
-        }
-
-        if (sector.capturePoints != null)
-        {
-            foreach (CapturePoint cp in sector.capturePoints)
-            {
-                if (cp == null) continue;
-                CreateCapturePointRow(cp, playerFaction);
-            }
+            if (source == null) continue;
+            CreateSourceRow(source, catalog);
         }
 
         isInitialized = true;
-        initializedSectorIndex = sectorIndex;
+        initializedSectorIndex = GameManager.Instance.currentSectorIndex;
         RefreshButtonStates();
     }
 
@@ -100,90 +83,40 @@ public class StoreManager : MonoBehaviour
         }
     }
 
-    private List<PurchasableUnit> BuildSectorCatalog(Sector sector, Faction faction)
+    private void CreateSourceRow(SpawnSource source, List<PurchasableUnit> catalog)
     {
-        List<PurchasableUnit> catalog = new List<PurchasableUnit>();
-        HashSet<string> seen = new HashSet<string>();
+        if (source == null || sidebarContainer == null || rowPrefab == null) return;
 
-        if (sector == null || sector.capturePoints == null) return catalog;
-
-        foreach (CapturePoint cp in sector.capturePoints)
-        {
-            if (cp == null) continue;
-
-            PurchasableUnit[] units = faction == Faction.Attacker
-                ? cp.attackerPurchasables
-                : cp.defenderPurchasables;
-
-            if (units == null) continue;
-
-            foreach (PurchasableUnit unit in units)
-            {
-                if (unit == null || unit.unitPrefab == null) continue;
-
-                string key = $"{unit.unitDisplayName}|{unit.xpCost}|{unit.GetResolvedCategory()}";
-                if (unit.TryGetResolvedInfantryClass(out UnitClass unitClass)) key += $"|{unitClass}";
-
-                if (seen.Add(key)) catalog.Add(unit);
-            }
-        }
-
-        return catalog;
-    }
-
-    private void CreateBaseRow(BaseZone baseZone, List<PurchasableUnit> units)
-    {
         GameObject newRow = Instantiate(rowPrefab, sidebarContainer);
         TextMeshProUGUI rowText = newRow.GetComponentInChildren<TextMeshProUGUI>();
-        if (rowText != null) rowText.text = "BASE";
+        if (rowText != null) rowText.text = source.DisplayName;
 
         allStoreRows.Add(new StoreRow
         {
             rowObject = newRow,
-            baseSource = baseZone
+            source = source
         });
 
-        foreach (PurchasableUnit unit in units)
-        {
-            CreateUnitButton(newRow.transform, unit, null, baseZone);
-        }
-    }
+        if (catalog == null) return;
 
-    private void CreateCapturePointRow(CapturePoint cp, Faction faction)
-    {
-        GameObject newRow = Instantiate(rowPrefab, sidebarContainer);
-        TextMeshProUGUI rowText = newRow.GetComponentInChildren<TextMeshProUGUI>();
-        if (rowText != null) rowText.text = cp.capturePointName;
-
-        allStoreRows.Add(new StoreRow
-        {
-            rowObject = newRow,
-            captureSource = cp
-        });
-
-        PurchasableUnit[] unitsToDisplay = faction == Faction.Attacker
-            ? cp.attackerPurchasables
-            : cp.defenderPurchasables;
-
-        if (unitsToDisplay == null) return;
-
-        foreach (PurchasableUnit unit in unitsToDisplay)
+        foreach (PurchasableUnit unit in catalog)
         {
             if (unit == null) continue;
-            CreateUnitButton(newRow.transform, unit, cp, null);
+            CreateUnitButton(newRow.transform, unit, source);
         }
     }
 
-    private void CreateUnitButton(Transform rowTransform, PurchasableUnit unit, CapturePoint captureSource, BaseZone baseSource)
+    private void CreateUnitButton(Transform rowTransform, PurchasableUnit unit, SpawnSource source)
     {
+        if (unitButtonPrefab == null || rowTransform == null) return;
+
         GameObject btnObj = Instantiate(unitButtonPrefab, rowTransform);
         StoreButton storeBtn = new StoreButton
         {
             button = btnObj.GetComponent<Button>(),
             buttonText = btnObj.GetComponentInChildren<TextMeshProUGUI>(),
             unit = unit,
-            captureSource = captureSource,
-            baseSource = baseSource
+            source = source
         };
 
         if (storeBtn.button != null)
@@ -205,23 +138,15 @@ public class StoreManager : MonoBehaviour
 
         foreach (StoreRow row in allStoreRows)
         {
-            if (row.rowObject == null) continue;
-
-            bool visible = row.baseSource != null
-                ? row.baseSource.IsCurrentBaseFor(playerFaction)
-                : row.captureSource != null && row.captureSource.IsControlledBy(playerFaction);
-
-            row.rowObject.SetActive(visible);
+            if (row.rowObject == null || row.source == null) continue;
+            row.rowObject.SetActive(row.source.IsAvailable());
         }
 
         foreach (StoreButton sb in allStoreButtons)
         {
-            if (sb.button == null || sb.unit == null) continue;
+            if (sb.button == null || sb.unit == null || sb.source == null) continue;
 
-            bool validSource = sb.baseSource != null
-                ? sb.baseSource.IsCurrentBaseFor(playerFaction)
-                : sb.captureSource != null && sb.captureSource.IsControlledBy(playerFaction);
-
+            bool validSource = sb.source.IsAvailable();
             bool canAfford = currentXP >= sb.unit.xpCost;
             bool withinDeploymentLimit = IsWithinSpecialistDeploymentLimit(sb.unit, playerFaction);
             sb.button.interactable = validSource && canAfford && withinDeploymentLimit;
@@ -268,16 +193,12 @@ public class StoreManager : MonoBehaviour
 
     private void PurchaseUnit(StoreButton storeButton)
     {
-        if (GameManager.Instance == null || storeButton == null || storeButton.unit == null) return;
+        if (GameManager.Instance == null || storeButton == null || storeButton.unit == null || storeButton.source == null) return;
 
         PurchasableUnit unit = storeButton.unit;
         Faction playerFaction = GameManager.Instance.playerFaction;
 
-        bool validSource = storeButton.baseSource != null
-            ? storeButton.baseSource.IsCurrentBaseFor(playerFaction)
-            : storeButton.captureSource != null && storeButton.captureSource.IsControlledBy(playerFaction);
-
-        if (!validSource) return;
+        if (!storeButton.source.IsAvailable()) return;
 
         int currentXP = playerFaction == Faction.Attacker
             ? GameManager.Instance.attackerXP
@@ -300,14 +221,11 @@ public class StoreManager : MonoBehaviour
             }
         }
 
+        Transform spawnLoc = storeButton.source.GetNextSpawnTransform();
+        if (spawnLoc == null || unit.unitPrefab == null) return;
+
         if (playerFaction == Faction.Attacker) GameManager.Instance.attackerXP -= unit.xpCost;
         else if (playerFaction == Faction.Defender) GameManager.Instance.defenderXP -= unit.xpCost;
-
-        Transform spawnLoc = storeButton.baseSource != null
-            ? storeButton.baseSource.GetSpawnPoint()
-            : storeButton.captureSource.GetNextAvailableSpawnPoint();
-
-        if (spawnLoc == null || unit.unitPrefab == null) return;
 
         GameObject spawnedUnit = Instantiate(unit.unitPrefab, spawnLoc.position, spawnLoc.rotation);
         RegisterPurchasedUnit(spawnedUnit, unit);
