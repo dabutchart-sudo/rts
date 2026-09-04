@@ -361,12 +361,29 @@ public class GameManager : MonoBehaviour
             Transform attSpawn = activeSector.attackerBase.spawnPoint != null ? activeSector.attackerBase.spawnPoint : activeSector.attackerBase.transform;
             attackerSpawner.transform.position = attSpawn.position;
         }
+
         if (defenderSpawner != null && activeSector.defenderBase != null)
         {
             Transform defSpawn = activeSector.defenderBase.spawnPoint != null ? activeSector.defenderBase.spawnPoint : activeSector.defenderBase.transform;
             defenderSpawner.transform.position = defSpawn.position;
+        }
 
-            defenderSpawner.SpawnWave(defenderSpawner.initialSpawnCount);
+        int attackerReplenished = attackerSpawner != null
+            ? attackerSpawner.ReplenishAssaultsForSectorStart()
+            : 0;
+
+        int defenderReplenished = defenderSpawner != null
+            ? defenderSpawner.ReplenishAssaultsForSectorStart()
+            : 0;
+
+        Debug.Log(
+            $"🚩 SECTOR {currentSectorIndex + 1} READY: " +
+            $"Attackers replenished {attackerReplenished}, Defenders replenished {defenderReplenished}, " +
+            $"Attacker tickets remaining {attackerTickets}.");
+
+        if (SquadManager.Instance != null)
+        {
+            SquadManager.Instance.ClearStrategicObjectives();
         }
 
         if (UIManager.Instance != null)
