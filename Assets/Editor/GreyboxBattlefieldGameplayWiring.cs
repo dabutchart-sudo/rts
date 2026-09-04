@@ -18,6 +18,8 @@ public static class GreyboxBattlefieldGameplayWiring
     private const string GeneratedRootName = "GreyboxBattlefield01_Generated";
     private const string GameplayRootName = "GREYBOX GAMEPLAY";
     private const string CapturePrefabPath = "Assets/Prefabs/CaptureZone.prefab";
+    private const string AttackerAssaultPrefabPath = "Assets/Prefabs/Units/Assault_Attacker.prefab";
+    private const string DefenderAssaultPrefabPath = "Assets/Prefabs/Units/Assault_Defender.prefab";
 
     [MenuItem("RTS/Maps/Wire Greybox Battlefield 01 for Play")]
     public static void WireForPlay()
@@ -37,7 +39,7 @@ public static class GreyboxBattlefieldGameplayWiring
         {
             EditorUtility.DisplayDialog(
                 "Greybox Battlefield 01",
-                "The generated map root was not found. Run RTS > Maps > Build Greybox Battlefield 01 first.",
+                "The generated map root was not found. Run RTS > Maps > Build Greybox Battlefield 01 (Safe) first.",
                 "OK");
             return;
         }
@@ -66,7 +68,7 @@ public static class GreyboxBattlefieldGameplayWiring
         CapturePoint c1 = CreateCapturePoint(gameplayRoot.transform, "C1", 2, new Vector3(-34f, 0.18f, 231f), catalog);
         CapturePoint c2 = CreateCapturePoint(gameplayRoot.transform, "C2", 2, new Vector3(36f, 0.18f, 242f), catalog);
 
-        BaseZone attackerS1 = CreateBase(gameplayRoot.transform, "S1_AttackerBase", Faction.Attacker, new Vector3(-8f, 0.18f, -12f));
+        BaseZone attackerS1 = CreateBase(gameplayRoot.transform, "S1_AttackerBase", Faction.Attacker, new Vector3(-8f, 0.18f, -6f));
         BaseZone defenderS1 = CreateBase(gameplayRoot.transform, "S1_DefenderBase", Faction.Defender, new Vector3(-8f, 0.18f, 108f));
         BaseZone attackerS2 = CreateBase(gameplayRoot.transform, "S2_AttackerBase", Faction.Attacker, new Vector3(-10f, 0.18f, 111f));
         BaseZone defenderS2 = CreateBase(gameplayRoot.transform, "S2_DefenderBase", Faction.Defender, new Vector3(-6f, 0.18f, 197f));
@@ -82,7 +84,7 @@ public static class GreyboxBattlefieldGameplayWiring
                 capturePoints = new[] { a1, a2 },
                 attackerBase = attackerS1,
                 defenderBase = defenderS1,
-                sectorBounds = new Bounds(new Vector3(0f, 0f, 50f), new Vector3(190f, 20f, 125f))
+                sectorBounds = new Bounds(new Vector3(0f, 0f, 52f), new Vector3(190f, 20f, 128f))
             },
             new Sector
             {
@@ -105,10 +107,9 @@ public static class GreyboxBattlefieldGameplayWiring
         };
 
         gameManager.currentSectorIndex = 0;
-
-        // The old prototype mirrored the entire battlefield for a defending player. A baked NavMesh
-        // should remain world-fixed, so the authored greybox does not use that legacy world rotation.
         gameManager.battlefieldParent = null;
+
+        RepairSpawnerReferences(gameManager);
 
         if (gameManager.attackerSpawner != null)
         {
@@ -123,6 +124,8 @@ public static class GreyboxBattlefieldGameplayWiring
         ConfigureNavigation(generatedRoot.transform);
 
         EditorUtility.SetDirty(gameManager);
+        if (gameManager.attackerSpawner != null) EditorUtility.SetDirty(gameManager.attackerSpawner);
+        if (gameManager.defenderSpawner != null) EditorUtility.SetDirty(gameManager.defenderSpawner);
         EditorSceneManager.MarkSceneDirty(scene);
         EditorSceneManager.SaveScene(scene);
 
@@ -132,9 +135,88 @@ public static class GreyboxBattlefieldGameplayWiring
             ? "existing purchase catalog copied"
             : "specialist catalog will be supplied by runtime bootstraps";
 
+        string attackerSpawnerState = DescribeSpawner(gameManager.attackerSpawner);
+        string defenderSpawnerState = DescribeSpawner(gameManager.defenderSpawner);
+
         Debug.Log(
             "MAP WIRING: Greybox Battlefield 01 READY FOR PLAY - " +
-            "3 sectors, 6 capture points, 6 dynamic bases, NavMesh baked; " + catalogNote + ".");
+            "3 sectors, 6 capture points, 6 dynamic bases, NavMesh baked; " + catalogNote + ".\n" +
+            $"MAP WIRING SPAWNERS: Attacker={attackerSpawnerState}; Defender={defenderSpawnerState}");
+    }
+
+    private static void RepairSpawnerReferences(GameManager gameManager)
+    {
+        UnitSpawner attacker = gameManager.attackerSpawner;
+        UnitSpawner defender = gameManager.defenderSpawner;
+
+        if (attacker == null)
+        {
+            GameObject attackerObject = GameObject.Find("AttackerSpawner");
+            if (attackerObject != null) attacker = attackerObject.GetComponent<UnitSpawner>();
+        }
+
+        if (defender == null)
+        {
+            GameObject defenderObject = GameObject.Find("DefenderSpawner");
+            if (defenderObject != null) defender = defenderObject.GetComponent<UnitSpawner>();
+        }
+
+        if (attacker == null || defender == null)
+        {
+            UnitSpawner[] allSpawners = Object.FindObjectsByType<UnitSpawner>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            foreach (UnitSpawner spawner in allSpawners)
+            {
+                if (spawner == null) continue;
+                if (spawner.isDefenderSpawner && defender == null) defender = spawner;
+                if (!spawner.isDefenderSpawner && attacker == null) attacker = spawner;
+            }
+        }
+
+        if (attacker != null)
+        {
+            attacker.isDefenderSpawner = false;
+            if (attacker.assaultPrefab == null)
+            {
+                attacker.assaultPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(AttackerAssaultPrefabPath);
+            }
+        }
+
+        if (defender != null)
+        {
+            defender.isDefenderSpawner = true;
+            if (defender.assaultPrefab == null)
+            {
+                defender.assaultPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(DefenderAssaultPrefabPath);
+            }
+        }
+
+        gameManager.attackerSpawner = attacker;
+        gameManager.defenderSpawner = defender;
+
+        if (gameManager.attackerSpawner == null)
+        {
+            Debug.LogError("MAP WIRING: Attacker UnitSpawner reference could not be repaired.");
+        }
+        else if (gameManager.attackerSpawner.assaultPrefab == null)
+        {
+            Debug.LogError($"MAP WIRING: Attacker assault prefab missing. Expected {AttackerAssaultPrefabPath}.");
+        }
+
+        if (gameManager.defenderSpawner == null)
+        {
+            Debug.LogError("MAP WIRING: Defender UnitSpawner reference could not be repaired.");
+        }
+        else if (gameManager.defenderSpawner.assaultPrefab == null)
+        {
+            Debug.LogError($"MAP WIRING: Defender assault prefab missing. Expected {DefenderAssaultPrefabPath}.");
+        }
+    }
+
+    private static string DescribeSpawner(UnitSpawner spawner)
+    {
+        if (spawner == null) return "MISSING";
+        string prefabName = spawner.assaultPrefab != null ? spawner.assaultPrefab.name : "NO PREFAB";
+        return $"{spawner.name}, prefab={prefabName}, defender={spawner.isDefenderSpawner}";
     }
 
     private static CapturePoint CreateCapturePoint(
@@ -241,10 +323,7 @@ public static class GreyboxBattlefieldGameplayWiring
 
     private static void RemoveLegacyCapturePoints()
     {
-        CapturePoint[] existingPoints = Object.FindObjectsByType<CapturePoint>(
-            FindObjectsInactive.Include,
-            FindObjectsSortMode.None);
-
+        CapturePoint[] existingPoints = Object.FindObjectsByType<CapturePoint>(FindObjectsInactive.Include, FindObjectsSortMode.None);
         foreach (CapturePoint point in existingPoints)
         {
             if (point != null) Object.DestroyImmediate(point.gameObject);
@@ -268,8 +347,6 @@ public static class GreyboxBattlefieldGameplayWiring
 
     private static void DisableTemporaryTerraces(Transform generatedRoot)
     {
-        // The v0.2 terraces are useful layout notes, but they are vertical box steps rather than
-        // traversable slopes. Hide them for the first gameplay pass so they cannot trap NavMesh units.
         string[] names = { "West Rise S1", "East Rise S2", "Final Ridge" };
         foreach (string name in names)
         {
@@ -294,9 +371,7 @@ public static class GreyboxBattlefieldGameplayWiring
 
     private static void ConfigureNavigation(Transform generatedRoot)
     {
-        NavMeshSurface[] surfaces = Object.FindObjectsByType<NavMeshSurface>(
-            FindObjectsInactive.Include,
-            FindObjectsSortMode.None);
+        NavMeshSurface[] surfaces = Object.FindObjectsByType<NavMeshSurface>(FindObjectsInactive.Include, FindObjectsSortMode.None);
 
         foreach (NavMeshSurface surface in surfaces)
         {
@@ -339,9 +414,7 @@ public static class GreyboxBattlefieldGameplayWiring
         public static CaptureCatalogTemplate FromScene()
         {
             CaptureCatalogTemplate template = new CaptureCatalogTemplate();
-            CapturePoint[] points = Object.FindObjectsByType<CapturePoint>(
-                FindObjectsInactive.Include,
-                FindObjectsSortMode.None);
+            CapturePoint[] points = Object.FindObjectsByType<CapturePoint>(FindObjectsInactive.Include, FindObjectsSortMode.None);
 
             foreach (CapturePoint point in points)
             {
