@@ -15,6 +15,13 @@ public class AICommander : MonoBehaviour
     [Tooltip("How often the AI checks the store to make purchases")]
     public float decisionInterval = 4f;
 
+    [Header("Purchase Categories")]
+    [Tooltip("Vehicles are not part of the current infantry-only prototype. Leave disabled until vehicle gameplay is intentionally introduced.")]
+    public bool allowVehiclePurchases = false;
+
+    [Tooltip("Allow purchasable units that cannot be resolved as Infantry or Vehicle. Normally keep disabled so classification mistakes are visible rather than silently spawned.")]
+    public bool allowOtherPurchases = false;
+
     private float xpTimer = 0f;
     private float decisionTimer = 0f;
 
@@ -61,10 +68,10 @@ public class AICommander : MonoBehaviour
             PurchasableUnit[] availableUnits = cp.GetAvailableUnits(aiFaction);
             foreach (PurchasableUnit unit in availableUnits)
             {
-                if (unit != null && aiCommandXP >= unit.xpCost)
-                {
-                    affordableOptions.Add(new PurchaseOption { unit = unit, sourceBase = cp });
-                }
+                if (unit == null || aiCommandXP < unit.xpCost) continue;
+                if (!IsPurchaseCategoryAllowed(unit)) continue;
+
+                affordableOptions.Add(new PurchaseOption { unit = unit, sourceBase = cp });
             }
         }
 
@@ -73,6 +80,25 @@ public class AICommander : MonoBehaviour
         int randomIndex = Random.Range(0, affordableOptions.Count);
         PurchaseOption chosenOption = affordableOptions[randomIndex];
         ExecutePurchase(chosenOption.unit, chosenOption.sourceBase);
+    }
+
+    private bool IsPurchaseCategoryAllowed(PurchasableUnit unit)
+    {
+        if (unit == null) return false;
+
+        UnitCategory category = unit.GetResolvedCategory();
+
+        if (category == UnitCategory.Infantry)
+        {
+            return true;
+        }
+
+        if (category == UnitCategory.Vehicle)
+        {
+            return allowVehiclePurchases;
+        }
+
+        return allowOtherPurchases;
     }
 
     private void ExecutePurchase(PurchasableUnit unit, CapturePoint sourceBase)
