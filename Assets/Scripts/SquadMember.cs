@@ -2,9 +2,8 @@ using TMPro;
 using UnityEngine;
 
 /// <summary>
-/// Stores squad membership. Squad identity is shown with one to four pips rather than
-/// letters or colour alone: Alpha=•, Bravo=••, Charlie=•••, Delta=••••.
-/// This stays distinct from class letters and objective names and remains colour-blind safe.
+/// Stores squad membership. Squad identity is shown as a single floating number:
+/// Alpha=1, Bravo=2, Charlie=3, Delta=4. This is faster to read than counting pips.
 /// </summary>
 public sealed class SquadMember : MonoBehaviour
 {
@@ -12,12 +11,12 @@ public sealed class SquadMember : MonoBehaviour
     [SerializeField] private string squadName;
     [SerializeField] private string squadLetter;
 
-    [Header("Squad Pip Indicator")]
+    [Header("Squad Number Indicator")]
     [SerializeField] private bool showSquadIndicator = true;
-    [SerializeField] private float indicatorHeight = 2.05f;
-    [SerializeField] private float indicatorScale = 0.34f;
-    [SerializeField] private float normalFontSize = 8f;
-    [SerializeField] private float selectedFontSize = 10f;
+    [SerializeField] private float indicatorHeight = 2.55f;
+    [SerializeField] private float indicatorScale = 0.42f;
+    [SerializeField] private float normalFontSize = 9f;
+    [SerializeField] private float selectedFontSize = 11f;
 
     private TextMeshPro indicatorText;
     private SelectableUnit selectableUnit;
@@ -52,8 +51,10 @@ public sealed class SquadMember : MonoBehaviour
         if (!shouldShow) return;
 
         bool selected = selectableUnit != null && selectableUnit.isSelected;
-        indicatorText.text = GetSquadPips(squadLetter);
+        indicatorText.text = GetSquadNumber(squadLetter);
         indicatorText.fontSize = selected ? selectedFontSize : normalFontSize;
+        indicatorText.color = CompareTag("Attacker") ? FactionVisuals.AttackerColor :
+                              CompareTag("Defender") ? FactionVisuals.DefenderColor : Color.white;
     }
 
     private void DisableLegacyIndicators()
@@ -63,6 +64,9 @@ public sealed class SquadMember : MonoBehaviour
 
         Transform ring = transform.Find("SquadGroundRing");
         if (ring != null) ring.gameObject.SetActive(false);
+
+        Transform pips = transform.Find("SquadPipIndicator");
+        if (pips != null) pips.gameObject.SetActive(false);
     }
 
     private void CreateOrRefreshIndicator()
@@ -73,12 +77,12 @@ public sealed class SquadMember : MonoBehaviour
             return;
         }
 
-        Transform existing = transform.Find("SquadPipIndicator");
+        Transform existing = transform.Find("SquadNumberIndicator");
         if (existing != null) indicatorText = existing.GetComponent<TextMeshPro>();
 
         if (indicatorText == null)
         {
-            GameObject indicatorObject = new GameObject("SquadPipIndicator");
+            GameObject indicatorObject = new GameObject("SquadNumberIndicator");
             indicatorObject.transform.SetParent(transform, false);
             indicatorObject.transform.localPosition = new Vector3(0f, indicatorHeight, 0f);
             indicatorObject.transform.localRotation = Quaternion.identity;
@@ -88,27 +92,25 @@ public sealed class SquadMember : MonoBehaviour
             indicatorText.alignment = TextAlignmentOptions.Center;
             indicatorText.fontSize = normalFontSize;
             indicatorText.fontStyle = FontStyles.Bold;
-            indicatorText.color = Color.white;
             indicatorText.enableAutoSizing = false;
             indicatorText.raycastTarget = false;
-            indicatorText.sortingOrder = 25;
-
+            indicatorText.sortingOrder = 30;
             indicatorObject.AddComponent<Billboard>();
         }
 
-        indicatorText.text = GetSquadPips(squadLetter);
+        indicatorText.text = GetSquadNumber(squadLetter);
         indicatorText.gameObject.SetActive(IsPlayerFactionUnit());
     }
 
-    private string GetSquadPips(string letter)
+    private string GetSquadNumber(string letter)
     {
         switch (letter)
         {
-            case "A": return "•";
-            case "B": return "••";
-            case "C": return "•••";
-            case "D": return "••••";
-            default: return "•";
+            case "A": return "1";
+            case "B": return "2";
+            case "C": return "3";
+            case "D": return "4";
+            default: return "?";
         }
     }
 
