@@ -60,11 +60,16 @@ public class UnitSpawner : MonoBehaviour
         int cap = isDefenderSpawner ? GetDefenderAssaultCap() : GetAttackerAssaultCap();
         int before = GetAliveAssaultCount();
         int missing = Mathf.Max(0, cap - before);
-        int spawned = SpawnAssaultsUpToLimit(missing, false);
+
+        // Defenders have unlimited reinforcements. Attackers fund replacements from tickets.
+        bool spendTickets = !isDefenderSpawner;
+        int spawned = SpawnAssaultsUpToLimit(missing, spendTickets);
+
         int after = GetAliveAssaultCount();
         string teamName = isDefenderSpawner ? "DEFENDER" : "ATTACKER";
+        string funding = isDefenderSpawner ? "unlimited defender reinforcements" : "attacker tickets";
 
-        Debug.Log($"🚩 {teamName} SECTOR START: Preserved {before} surviving Assaults, replenished {spawned}, ready {after}/{cap}.");
+        Debug.Log($"🚩 {teamName} SECTOR START: Preserved {before} surviving Assaults, replenished {spawned} using {funding}, ready {after}/{cap}.");
         return spawned;
     }
 
