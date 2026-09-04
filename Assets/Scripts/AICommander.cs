@@ -27,18 +27,13 @@ public class AICommander : MonoBehaviour
     void Update()
     {
         if (GameManager.Instance == null || GameManager.Instance.isTransitioningSector) return;
-
-        // 1. Do nothing while waiting on the main menu
         if (GameManager.Instance.playerFaction == Faction.None) return;
 
-        // 2. THE AIRTIGHT LOCK:
-        // If we are NOT testing, and this AI matches the human's faction, skip this frame entirely!
         if (!GameManager.Instance.enableAutoTestMode && aiFaction == GameManager.Instance.playerFaction)
         {
             return;
         }
 
-        // 3. Drip XP over time (Only runs if AI is allowed to act)
         xpTimer += Time.deltaTime;
         if (xpTimer >= xpTickInterval)
         {
@@ -46,7 +41,6 @@ public class AICommander : MonoBehaviour
             xpTimer = 0f;
         }
 
-        // 4. Evaluate purchases on an interval (Only runs if AI is allowed to act)
         decisionTimer += Time.deltaTime;
         if (decisionTimer >= decisionInterval)
         {
@@ -60,31 +54,24 @@ public class AICommander : MonoBehaviour
         Sector currentSector = GameManager.Instance.sectors[GameManager.Instance.currentSectorIndex];
         List<PurchaseOption> affordableOptions = new List<PurchaseOption>();
 
-        // Scan all capture points in the active sector
         foreach (CapturePoint cp in currentSector.capturePoints)
         {
-            if (cp != null && cp.IsControlledBy(aiFaction))
-            {
-                PurchasableUnit[] availableUnits = cp.GetAvailableUnits(aiFaction);
+            if (cp == null || !cp.IsControlledBy(aiFaction)) continue;
 
-                // Add any unit the AI can afford to the list of options
-                foreach (PurchasableUnit unit in availableUnits)
+            PurchasableUnit[] availableUnits = cp.GetAvailableUnits(aiFaction);
+            foreach (PurchasableUnit unit in availableUnits)
+            {
+                if (unit != null && aiCommandXP >= unit.xpCost)
                 {
-                    if (aiCommandXP >= unit.xpCost)
-                    {
-                        affordableOptions.Add(new PurchaseOption { unit = unit, sourceBase = cp });
-                    }
+                    affordableOptions.Add(new PurchaseOption { unit = unit, sourceBase = cp });
                 }
             }
         }
 
-        // If there is nothing to buy, wait until next time
         if (affordableOptions.Count == 0) return;
 
-        // Pick a random affordable unit to mix up the army composition
         int randomIndex = Random.Range(0, affordableOptions.Count);
         PurchaseOption chosenOption = affordableOptions[randomIndex];
-
         ExecutePurchase(chosenOption.unit, chosenOption.sourceBase);
     }
 
@@ -93,19 +80,25 @@ public class AICommander : MonoBehaviour
         aiCommandXP -= unit.xpCost;
         Transform spawnLocation = sourceBase.GetNextAvailableSpawnPoint();
         GameObject spawnedUnit = Instantiate(unit.unitPrefab, spawnLocation.position, spawnLocation.rotation);
-        RegisterPurchasedSpecialist(spawnedUnit, unit);
+        RegisterPurchasedUnit(spawnedUnit, unit);
 
         Debug.Log($"🤖 AI COMMANDER ({aiFaction}): Deployed {unit.unitDisplayName} at {sourceBase.capturePointName}! Remaining XP: {aiCommandXP}");
     }
 
-    private void RegisterPurchasedSpecialist(GameObject spawnedUnit, PurchasableUnit unit)
+    private void RegisterPurchasedUnit(GameObject spawnedUnit, PurchasableUnit unit)
     {
         if (spawnedUnit == null || unit == null) return;
 
-        UnitClass unitClass = UnitClassIdentity.InferFromDisplayName(unit.unitDisplayName);
-        if (unitClass == UnitClass.Assault) return;
+        UnitCategory category = unit.GetResolvedCategory();
+        UnitCategoryIdentity.Ensure(spawnedUnit, category);
+
+        if (category != UnitCategory.Infantry) return;
+        if (!unit.TryGetResolvedInfantryClass(out UnitClass unitClass)) return;
 
         UnitClassIdentity.Ensure(spawnedUnit, unitClass);
+
+        if (unitClass == UnitClass.Assault) return;
+
         SquadManager squadManager = SquadManager.EnsureInstance();
         if (squadManager != null)
         {
