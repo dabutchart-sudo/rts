@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 using System.Collections.Generic;
+using System.Text;
 
 public class TestDashboardOverlay : MonoBehaviour
 {
@@ -32,9 +33,11 @@ public class TestDashboardOverlay : MonoBehaviour
         public int engineer;
         public int recon;
         public int support;
-        public int other;
+        public int vehicle;
+        public int unknown;
+        public string unknownSummary;
 
-        public int Total => assault + engineer + recon + support + other;
+        public int Total => assault + engineer + recon + support + vehicle + unknown;
     }
 
     [Header("UI References (Idea A)")]
@@ -176,15 +179,23 @@ public class TestDashboardOverlay : MonoBehaviour
             ? $"<b>BATCH PROGRESS: {CurrentMatchNumber}/{TargetMatchCount}</b>"
             : $"<b>TEST RUN #{CurrentMatchNumber}</b>";
 
+        string attackerUnknownLine = attackerClasses.unknown > 0
+            ? $"\n<color=#FFD700>?:</color> {attackerClasses.unknownSummary}"
+            : string.Empty;
+
+        string defenderUnknownLine = defenderClasses.unknown > 0
+            ? $"\n<color=#FFD700>?:</color> {defenderClasses.unknownSummary}"
+            : string.Empty;
+
         statsText.text =
             $"{batchHeader}\n" +
             $"<color=#FFD700>Speed:</color> {Time.timeScale:0}x | <color=#FFD700>Sector:</color> {activeSectorName}\n" +
             $"<color=#5A9BD5><b>ATTACKERS</b></color> [Tickets: {Mathf.Max(0, gm.attackerTickets)} | XP: {gm.attackerXP}]\n" +
-            $"Live: A {attackerClasses.assault} | E {attackerClasses.engineer} | R {attackerClasses.recon} | S {attackerClasses.support} | O {attackerClasses.other} | <b>Total {attackerClasses.Total}</b>\n" +
+            $"Live: A {attackerClasses.assault} | E {attackerClasses.engineer} | R {attackerClasses.recon} | S {attackerClasses.support} | V {attackerClasses.vehicle} | ? {attackerClasses.unknown} | <b>Total {attackerClasses.Total}</b>" + attackerUnknownLine + "\n" +
             $"Kills: {attackerKills} | Deaths: {gm.attackerDeaths} | K/D: {attackerKd}\n" +
             $"Avg Life: {avgAtkLife:F1}s | Burn: {atkBurnRate:F1} t/m\n\n" +
             $"<color=#C00000><b>DEFENDERS</b></color> [Tickets: {Mathf.Max(0, gm.defenderTickets)} | XP: {gm.defenderXP}]\n" +
-            $"Live: A {defenderClasses.assault} | E {defenderClasses.engineer} | R {defenderClasses.recon} | S {defenderClasses.support} | O {defenderClasses.other} | <b>Total {defenderClasses.Total}</b>\n" +
+            $"Live: A {defenderClasses.assault} | E {defenderClasses.engineer} | R {defenderClasses.recon} | S {defenderClasses.support} | V {defenderClasses.vehicle} | ? {defenderClasses.unknown} | <b>Total {defenderClasses.Total}</b>" + defenderUnknownLine + "\n" +
             $"Kills: {defenderKills} | Deaths: {gm.defenderDeaths} | K/D: {defenderKd}\n" +
             $"Avg Life: {avgDefLife:F1}s | Burn: {defBurnRate:F1} t/m\n\n" +
             $"<b>BATCH AGGREGATE ({totalMatches} Finished):</b>\n" +
@@ -206,22 +217,38 @@ public class TestDashboardOverlay : MonoBehaviour
     {
         ClassCounts counts = new ClassCounts();
         GameObject[] units = GameObject.FindGameObjectsWithTag(factionTag);
+        Dictionary<string, int> unknownNames = new Dictionary<string, int>();
 
         foreach (GameObject unit in units)
         {
             if (unit == null) continue;
 
             UnitCategoryIdentity categoryIdentity = unit.GetComponent<UnitCategoryIdentity>();
-            if (categoryIdentity != null && categoryIdentity.Category != UnitCategory.Infantry)
+            if (categoryIdentity == null)
             {
-                counts.other++;
+                counts.unknown++;
+                AddUnknownName(unknownNames, unit.name);
+                continue;
+            }
+
+            if (categoryIdentity.Category == UnitCategory.Vehicle)
+            {
+                counts.vehicle++;
+                continue;
+            }
+
+            if (categoryIdentity.Category != UnitCategory.Infantry)
+            {
+                counts.unknown++;
+                AddUnknownName(unknownNames, unit.name);
                 continue;
             }
 
             UnitClassIdentity classIdentity = unit.GetComponent<UnitClassIdentity>();
             if (classIdentity == null)
             {
-                counts.other++;
+                counts.unknown++;
+                AddUnknownName(unknownNames, unit.name);
                 continue;
             }
 
@@ -240,12 +267,57 @@ public class TestDashboardOverlay : MonoBehaviour
                     counts.assault++;
                     break;
                 default:
-                    counts.other++;
+                    counts.unknown++;
+                    AddUnknownName(unknownNames, unit.name);
                     break;
             }
         }
 
+        counts.unknownSummary = BuildUnknownSummary(unknownNames);
         return counts;
+    }
+
+    private static void AddUnknownName(Dictionary<string, int> names, string objectName)
+    {
+        string cleanName = string.IsNullOrWhiteSpace(objectName) ? "<unnamed>" : objectName.Replace("(Clone)", string.Empty).Trim();
+
+        if (names.TryGetValue(cleanName, out int currentCount))
+        {
+            names[cleanName] = currentCount + 1;
+        }
+        else
+        {
+            names.Add(cleanName, 1);
+        }
+    }
+
+    private static string BuildUnknownSummary(Dictionary<string, int> names)
+    {
+        if (names == null || names.Count == 0) return "none";
+
+        StringBuilder builder = new StringBuilder();
+        int shown = 0;
+
+        foreach (KeyValuePair<string, int> pair in names)
+        {
+            if (shown > 0) builder.Append(", ");
+            builder.Append(pair.Key);
+            builder.Append(" x");
+            builder.Append(pair.Value);
+            shown++;
+
+            if (shown >= 4)
+            {
+                int remainingTypes = names.Count - shown;
+                if (remainingTypes > 0)
+                {
+                    builder.Append($", +{remainingTypes} type(s)");
+                }
+                break;
+            }
+        }
+
+        return builder.ToString();
     }
 
     private void CreateOverlayUI()
@@ -270,7 +342,7 @@ public class TestDashboardOverlay : MonoBehaviour
         rt.anchorMax = new Vector2(1f, 1f);
         rt.pivot = new Vector2(1f, 1f);
         rt.anchoredPosition = new Vector2(-15f, -15f);
-        rt.sizeDelta = new Vector2(475f, 385f);
+        rt.sizeDelta = new Vector2(560f, 430f);
 
         GameObject textGo = new GameObject("StatsText", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
         textGo.transform.SetParent(overlayPanel.transform, false);
