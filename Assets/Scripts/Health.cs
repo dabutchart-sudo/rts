@@ -4,7 +4,7 @@ using UnityEngine.UI;
 public class Health : MonoBehaviour
 {
     public enum ArmorType { Light, Heavy }
-    
+
     [Header("Health Settings")]
     public float maxHealth = 100f;
     public float currentHealth;
@@ -13,7 +13,8 @@ public class Health : MonoBehaviour
     [Header("UI Reference")]
     public Slider healthSlider;
 
-    private float spawnTime; // NEW: Track when they spawned
+    private float spawnTime;
+    private bool isDead = false;
 
     void Awake()
     {
@@ -26,17 +27,20 @@ public class Health : MonoBehaviour
     void Start()
     {
         currentHealth = maxHealth;
-        spawnTime = Time.time; 
+        spawnTime = Time.time;
+        isDead = false;
         UpdateHealthBar();
     }
 
     public void TakeDamage(float damageAmount)
     {
+        if (isDead) return;
+
         currentHealth -= damageAmount;
         currentHealth = Mathf.Clamp(currentHealth, 0f, maxHealth);
         UpdateHealthBar();
 
-        if (currentHealth <= 0)
+        if (currentHealth <= 0f)
         {
             Die();
         }
@@ -54,27 +58,32 @@ public class Health : MonoBehaviour
 
     private void Die()
     {
-        float lifespan = Time.time - spawnTime; // NEW: Calculate how long they lived
+        if (isDead) return;
+        isDead = true;
+
+        float lifespan = Time.time - spawnTime;
 
         if (gameObject.CompareTag("Defender"))
         {
             TestDashboardOverlay.RecordUnitDeath(transform.position, false);
-            if (GameManager.Instance != null) 
+
+            if (GameManager.Instance != null)
             {
                 GameManager.Instance.AddXP(5, "Attacker");
-                GameManager.Instance.defenderDeaths++; 
-                GameManager.Instance.defenderTotalLifespan += lifespan; // NEW: Send to GameManager
+                GameManager.Instance.defenderDeaths++;
+                GameManager.Instance.defenderTotalLifespan += lifespan;
             }
         }
         else if (gameObject.CompareTag("Attacker"))
         {
             TestDashboardOverlay.RecordUnitDeath(transform.position, true);
-            if (GameManager.Instance != null) 
+
+            if (GameManager.Instance != null)
             {
                 GameManager.Instance.AddXP(5, "Defender");
-                GameManager.Instance.attackerDeaths++; 
-                GameManager.Instance.attackerTotalLifespan += lifespan; // NEW: Send to GameManager
-                
+                GameManager.Instance.attackerDeaths++;
+                GameManager.Instance.attackerTotalLifespan += lifespan;
+
                 if (GameManager.Instance.attackerSpawner != null)
                 {
                     GameManager.Instance.attackerSpawner.RespawnAssaultUnit();
