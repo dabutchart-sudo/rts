@@ -26,6 +26,16 @@ public class TestDashboardOverlay : MonoBehaviour
         public float expireTime;
     }
 
+    private struct ClassCounts
+    {
+        public int assault;
+        public int engineer;
+        public int recon;
+        public int support;
+
+        public int Total => assault + engineer + recon + support;
+    }
+
     [Header("UI References (Idea A)")]
     private GameObject overlayPanel;
     private TextMeshProUGUI statsText;
@@ -135,6 +145,9 @@ public class TestDashboardOverlay : MonoBehaviour
         float avgAtkLife = gm.attackerDeaths > 0 ? gm.attackerTotalLifespan / gm.attackerDeaths : 0f;
         float avgDefLife = gm.defenderDeaths > 0 ? gm.defenderTotalLifespan / gm.defenderDeaths : 0f;
 
+        ClassCounts attackerClasses = CountClasses("Attacker");
+        ClassCounts defenderClasses = CountClasses("Defender");
+
         string activeSectorName = (gm.sectors != null && gm.currentSectorIndex < gm.sectors.Length)
             ? gm.sectors[gm.currentSectorIndex].sectorName
             : $"Sector {gm.currentSectorIndex}";
@@ -158,13 +171,47 @@ public class TestDashboardOverlay : MonoBehaviour
         statsText.text =
             $"{batchHeader}\n" +
             $"<color=#FFD700>Speed:</color> {Time.timeScale:0}x | <color=#FFD700>Sector:</color> {activeSectorName}\n" +
-            $"<color=#5A9BD5><b>ATTACKERS</b></color> [Tickets: {Mathf.Max(0, gm.attackerTickets)}]\n" +
+            $"<color=#5A9BD5><b>ATTACKERS</b></color> [Tickets: {Mathf.Max(0, gm.attackerTickets)} | XP: {gm.attackerXP}]\n" +
+            $"Live: A {attackerClasses.assault} | E {attackerClasses.engineer} | R {attackerClasses.recon} | S {attackerClasses.support} | <b>Total {attackerClasses.Total}</b>\n" +
             $"Deaths: {gm.attackerDeaths} | Avg Life: {avgAtkLife:F1}s | Burn: {atkBurnRate:F1} t/m\n\n" +
-            $"<color=#C00000><b>DEFENDERS</b></color> [Tickets: {Mathf.Max(0, gm.defenderTickets)}]\n" +
+            $"<color=#C00000><b>DEFENDERS</b></color> [Tickets: {Mathf.Max(0, gm.defenderTickets)} | XP: {gm.defenderXP}]\n" +
+            $"Live: A {defenderClasses.assault} | E {defenderClasses.engineer} | R {defenderClasses.recon} | S {defenderClasses.support} | <b>Total {defenderClasses.Total}</b>\n" +
             $"Deaths: {gm.defenderDeaths} | Avg Life: {avgDefLife:F1}s | Burn: {defBurnRate:F1} t/m\n\n" +
             $"<b>BATCH AGGREGATE ({totalMatches} Finished):</b>\n" +
             $"Atk Wins: {TotalAttackerWins} ({atkWsPct:F0}%) | Def Wins: {TotalDefenderWins} ({defWsPct:F0}%)\n" +
             $"Avg Match: {avgMatchDuration:F1}s | Detailed CSV telemetry enabled";
+    }
+
+    private ClassCounts CountClasses(string factionTag)
+    {
+        ClassCounts counts = new ClassCounts();
+        GameObject[] units = GameObject.FindGameObjectsWithTag(factionTag);
+
+        foreach (GameObject unit in units)
+        {
+            if (unit == null) continue;
+
+            UnitClassIdentity identity = unit.GetComponent<UnitClassIdentity>();
+            UnitClass unitClass = identity != null ? identity.Class : UnitClass.Assault;
+
+            switch (unitClass)
+            {
+                case UnitClass.Engineer:
+                    counts.engineer++;
+                    break;
+                case UnitClass.Recon:
+                    counts.recon++;
+                    break;
+                case UnitClass.Support:
+                    counts.support++;
+                    break;
+                default:
+                    counts.assault++;
+                    break;
+            }
+        }
+
+        return counts;
     }
 
     private void CreateOverlayUI()
@@ -189,7 +236,7 @@ public class TestDashboardOverlay : MonoBehaviour
         rt.anchorMax = new Vector2(1f, 1f);
         rt.pivot = new Vector2(1f, 1f);
         rt.anchoredPosition = new Vector2(-15f, -15f);
-        rt.sizeDelta = new Vector2(390f, 285f);
+        rt.sizeDelta = new Vector2(440f, 335f);
 
         GameObject textGo = new GameObject("StatsText", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
         textGo.transform.SetParent(overlayPanel.transform, false);
