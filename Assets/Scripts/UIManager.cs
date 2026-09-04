@@ -13,8 +13,8 @@ public class UIManager : MonoBehaviour
     public TextMeshProUGUI gameOverText;
 
     [Header("Readability")]
-    [Tooltip("Multiplier applied to the right-side capture status panel font at runtime.")]
-    public float capturePanelFontMultiplier = 2f;
+    [Tooltip("Multiplier applied to the capture status panel font at runtime. Keep this near 1 for the tactical camera.")]
+    public float capturePanelFontMultiplier = 1f;
 
     private readonly Dictionary<string, string> capturePointStatuses = new Dictionary<string, string>();
     private bool captureFontScaled = false;
@@ -61,7 +61,7 @@ public class UIManager : MonoBehaviour
     {
         if (captureFontScaled || captureText == null) return;
 
-        captureText.fontSize *= Mathf.Max(1f, capturePanelFontMultiplier);
+        captureText.fontSize *= Mathf.Max(0.5f, capturePanelFontMultiplier);
         captureFontScaled = true;
     }
 
@@ -73,40 +73,40 @@ public class UIManager : MonoBehaviour
         if (captureText == null) return;
 
         int displayPercentage = Mathf.Abs(Mathf.RoundToInt(progress));
-        string statusText = "";
-        string colorHex = "#FFFFFF";
+        string statusText;
+        string colorHex;
 
         if (progress >= 100f)
         {
-            statusText = capturePointName + ": SECURED (100%)";
+            statusText = capturePointName + "  SECURED  100%";
             colorHex = "#00FFFF";
         }
         else if (progress > 0)
         {
-            statusText = capturePointName + ": Capturing (" + displayPercentage + "% Atk)";
+            statusText = capturePointName + "  CAPTURING  " + displayPercentage + "%";
             colorHex = "#00FFFF";
         }
         else if (progress == 0)
         {
-            statusText = capturePointName + ": Neutralized (0%)";
+            statusText = capturePointName + "  NEUTRAL";
             colorHex = "#FFFFFF";
         }
         else if (progress > -100f)
         {
             if (attackers > defenders)
             {
-                statusText = capturePointName + ": Neutralizing (" + displayPercentage + "% Def)";
+                statusText = capturePointName + "  NEUTRALIZING  " + displayPercentage + "%";
                 colorHex = "#FFA500";
             }
             else
             {
-                statusText = capturePointName + ": Defenders Fortifying (" + displayPercentage + "% Def)";
+                statusText = capturePointName + "  DEFENDING  " + displayPercentage + "%";
                 colorHex = "#FF0000";
             }
         }
         else
         {
-            statusText = capturePointName + ": Defender Controlled (100%)";
+            statusText = capturePointName + "  DEFENDED  100%";
             colorHex = "#FF0000";
         }
 
