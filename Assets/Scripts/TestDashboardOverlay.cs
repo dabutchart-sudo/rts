@@ -35,6 +35,7 @@ public class TestDashboardOverlay : MonoBehaviour
         public int support;
         public int vehicle;
         public int unknown;
+        public string vehicleSummary;
         public string unknownSummary;
 
         public int Total => assault + engineer + recon + support + vehicle + unknown;
@@ -179,8 +180,16 @@ public class TestDashboardOverlay : MonoBehaviour
             ? $"<b>BATCH PROGRESS: {CurrentMatchNumber}/{TargetMatchCount}</b>"
             : $"<b>TEST RUN #{CurrentMatchNumber}</b>";
 
+        string attackerVehicleLine = attackerClasses.vehicle > 0
+            ? $"\n<color=#FFD700>V:</color> {attackerClasses.vehicleSummary}"
+            : string.Empty;
+
         string attackerUnknownLine = attackerClasses.unknown > 0
             ? $"\n<color=#FFD700>?:</color> {attackerClasses.unknownSummary}"
+            : string.Empty;
+
+        string defenderVehicleLine = defenderClasses.vehicle > 0
+            ? $"\n<color=#FFD700>V:</color> {defenderClasses.vehicleSummary}"
             : string.Empty;
 
         string defenderUnknownLine = defenderClasses.unknown > 0
@@ -191,11 +200,11 @@ public class TestDashboardOverlay : MonoBehaviour
             $"{batchHeader}\n" +
             $"<color=#FFD700>Speed:</color> {Time.timeScale:0}x | <color=#FFD700>Sector:</color> {activeSectorName}\n" +
             $"<color=#5A9BD5><b>ATTACKERS</b></color> [Tickets: {Mathf.Max(0, gm.attackerTickets)} | XP: {gm.attackerXP}]\n" +
-            $"Live: A {attackerClasses.assault} | E {attackerClasses.engineer} | R {attackerClasses.recon} | S {attackerClasses.support} | V {attackerClasses.vehicle} | ? {attackerClasses.unknown} | <b>Total {attackerClasses.Total}</b>" + attackerUnknownLine + "\n" +
+            $"Live: A {attackerClasses.assault} | E {attackerClasses.engineer} | R {attackerClasses.recon} | S {attackerClasses.support} | V {attackerClasses.vehicle} | ? {attackerClasses.unknown} | <b>Total {attackerClasses.Total}</b>" + attackerVehicleLine + attackerUnknownLine + "\n" +
             $"Kills: {attackerKills} | Deaths: {gm.attackerDeaths} | K/D: {attackerKd}\n" +
             $"Avg Life: {avgAtkLife:F1}s | Burn: {atkBurnRate:F1} t/m\n\n" +
             $"<color=#C00000><b>DEFENDERS</b></color> [Tickets: {Mathf.Max(0, gm.defenderTickets)} | XP: {gm.defenderXP}]\n" +
-            $"Live: A {defenderClasses.assault} | E {defenderClasses.engineer} | R {defenderClasses.recon} | S {defenderClasses.support} | V {defenderClasses.vehicle} | ? {defenderClasses.unknown} | <b>Total {defenderClasses.Total}</b>" + defenderUnknownLine + "\n" +
+            $"Live: A {defenderClasses.assault} | E {defenderClasses.engineer} | R {defenderClasses.recon} | S {defenderClasses.support} | V {defenderClasses.vehicle} | ? {defenderClasses.unknown} | <b>Total {defenderClasses.Total}</b>" + defenderVehicleLine + defenderUnknownLine + "\n" +
             $"Kills: {defenderKills} | Deaths: {gm.defenderDeaths} | K/D: {defenderKd}\n" +
             $"Avg Life: {avgDefLife:F1}s | Burn: {defBurnRate:F1} t/m\n\n" +
             $"<b>BATCH AGGREGATE ({totalMatches} Finished):</b>\n" +
@@ -217,6 +226,7 @@ public class TestDashboardOverlay : MonoBehaviour
     {
         ClassCounts counts = new ClassCounts();
         GameObject[] units = GameObject.FindGameObjectsWithTag(factionTag);
+        Dictionary<string, int> vehicleNames = new Dictionary<string, int>();
         Dictionary<string, int> unknownNames = new Dictionary<string, int>();
 
         foreach (GameObject unit in units)
@@ -227,20 +237,21 @@ public class TestDashboardOverlay : MonoBehaviour
             if (categoryIdentity == null)
             {
                 counts.unknown++;
-                AddUnknownName(unknownNames, unit.name);
+                AddObjectName(unknownNames, unit.name);
                 continue;
             }
 
             if (categoryIdentity.Category == UnitCategory.Vehicle)
             {
                 counts.vehicle++;
+                AddObjectName(vehicleNames, unit.name);
                 continue;
             }
 
             if (categoryIdentity.Category != UnitCategory.Infantry)
             {
                 counts.unknown++;
-                AddUnknownName(unknownNames, unit.name);
+                AddObjectName(unknownNames, unit.name);
                 continue;
             }
 
@@ -248,7 +259,7 @@ public class TestDashboardOverlay : MonoBehaviour
             if (classIdentity == null)
             {
                 counts.unknown++;
-                AddUnknownName(unknownNames, unit.name);
+                AddObjectName(unknownNames, unit.name);
                 continue;
             }
 
@@ -268,16 +279,17 @@ public class TestDashboardOverlay : MonoBehaviour
                     break;
                 default:
                     counts.unknown++;
-                    AddUnknownName(unknownNames, unit.name);
+                    AddObjectName(unknownNames, unit.name);
                     break;
             }
         }
 
-        counts.unknownSummary = BuildUnknownSummary(unknownNames);
+        counts.vehicleSummary = BuildObjectSummary(vehicleNames);
+        counts.unknownSummary = BuildObjectSummary(unknownNames);
         return counts;
     }
 
-    private static void AddUnknownName(Dictionary<string, int> names, string objectName)
+    private static void AddObjectName(Dictionary<string, int> names, string objectName)
     {
         string cleanName = string.IsNullOrWhiteSpace(objectName) ? "<unnamed>" : objectName.Replace("(Clone)", string.Empty).Trim();
 
@@ -291,7 +303,7 @@ public class TestDashboardOverlay : MonoBehaviour
         }
     }
 
-    private static string BuildUnknownSummary(Dictionary<string, int> names)
+    private static string BuildObjectSummary(Dictionary<string, int> names)
     {
         if (names == null || names.Count == 0) return "none";
 
@@ -342,7 +354,7 @@ public class TestDashboardOverlay : MonoBehaviour
         rt.anchorMax = new Vector2(1f, 1f);
         rt.pivot = new Vector2(1f, 1f);
         rt.anchoredPosition = new Vector2(-15f, -15f);
-        rt.sizeDelta = new Vector2(560f, 430f);
+        rt.sizeDelta = new Vector2(600f, 465f);
 
         GameObject textGo = new GameObject("StatsText", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
         textGo.transform.SetParent(overlayPanel.transform, false);
