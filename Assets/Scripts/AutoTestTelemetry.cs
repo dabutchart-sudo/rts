@@ -43,8 +43,9 @@ public sealed class AutoTestTelemetry : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void EnsureRuntimeTelemetry()
     {
-        if (instance != null) return;
-
+        // The telemetry object is scene-local. Unity can invoke this callback for the
+        // new scene before the old scene object's OnDestroy has cleared the static
+        // reference, so never trust 'instance' alone here.
         AutoTestTelemetry existing = FindAnyObjectByType<AutoTestTelemetry>(FindObjectsInactive.Include);
         if (existing != null)
         {
@@ -52,6 +53,7 @@ public sealed class AutoTestTelemetry : MonoBehaviour
             return;
         }
 
+        instance = null;
         GameObject host = new GameObject("AutoTestTelemetry");
         host.AddComponent<AutoTestTelemetry>();
     }
@@ -64,7 +66,8 @@ public sealed class AutoTestTelemetry : MonoBehaviour
 
     private void Awake()
     {
-        if (instance != null && instance != this)
+        AutoTestTelemetry existing = FindAnyObjectByType<AutoTestTelemetry>(FindObjectsInactive.Include);
+        if (existing != null && existing != this)
         {
             Destroy(gameObject);
             return;
@@ -88,15 +91,34 @@ public sealed class AutoTestTelemetry : MonoBehaviour
             return;
         }
 
+        ResetMatchState();
+
+        Debug.Log($"TEST TELEMETRY: Run {runId}, match {GetMatchNumber()} started.");
+    }
+
+    private void ResetMatchState()
+    {
         matchStartTime = Time.time;
         nextSampleTime = Time.time;
         lastSectorIndex = gameManager.currentSectorIndex;
+        matchRecorded = false;
+
+        sectorEntryTimes.Clear();
+        sectorCaptureTimes.Clear();
+
+        sampleCount = 0;
+        attackerAliveTotal = 0f;
+        defenderAliveTotal = 0f;
+        healthySquadsTotal = 0f;
+        depletedSquadsTotal = 0f;
+        criticalSquadsTotal = 0f;
+        recoveringSquadsTotal = 0f;
+        maxAttackerAlive = 0;
+        maxDefenderAlive = 0;
         maxSectorReached = lastSectorIndex;
 
         EnsureSectorCapacity(lastSectorIndex);
         sectorEntryTimes[lastSectorIndex] = 0f;
-
-        Debug.Log($"TEST TELEMETRY: Run {runId}, match {GetMatchNumber()} started.");
     }
 
     private void Update()
