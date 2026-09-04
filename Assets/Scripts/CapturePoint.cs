@@ -88,7 +88,7 @@ public class CapturePoint : MonoBehaviour
     [Header("UI")]
     public TextMeshProUGUI progressText;
     public float groundOffset = 0.15f;
-    [Tooltip("World-space capture label scale. 0.02 is twice the previous size.")]
+    [Tooltip("World-space capture label scale.")]
     public float captureLabelScale = 0.02f;
 
     [Header("Base Production Capabilities")]
@@ -99,8 +99,8 @@ public class CapturePoint : MonoBehaviour
     public Transform[] purchaseSpawnPoints;
     private int nextSpawnIndex = 0;
 
-    private List<GameObject> activeAttackers = new List<GameObject>();
-    private List<GameObject> activeDefenders = new List<GameObject>();
+    private readonly List<GameObject> activeAttackers = new List<GameObject>();
+    private readonly List<GameObject> activeDefenders = new List<GameObject>();
     private Renderer pointRenderer;
     private Collider pointCollider;
     private Transform canvasTransform;
@@ -118,6 +118,7 @@ public class CapturePoint : MonoBehaviour
             canvasTransform = progressText.transform.parent;
             canvasTransform.SetParent(null);
             canvasTransform.localScale = Vector3.one * captureLabelScale;
+            progressText.alignment = TextAlignmentOptions.Center;
         }
         ResetCapturePoint();
     }
@@ -237,16 +238,28 @@ public class CapturePoint : MonoBehaviour
     void UpdateFloatingText()
     {
         if (progressText == null) return;
+
+        float displayPercent = Mathf.Abs(captureProgress);
         if (isLocked)
         {
-            progressText.text = "SECURED\nLOCKED";
+            progressText.text = $"{capturePointName}\nATTACKER\n100%";
             progressText.color = attackerColor;
-            return;
         }
-        float displayPercent = Mathf.Abs(captureProgress);
-        if (captureProgress > 0) { progressText.text = $"ATTACKER\n{displayPercent:F0}%"; progressText.color = attackerColor; }
-        else if (captureProgress < 0) { progressText.text = $"DEFENDER\n{displayPercent:F0}%"; progressText.color = defenderColor; }
-        else { progressText.text = "NEUTRAL\n0%"; progressText.color = neutralColor; }
+        else if (captureProgress > 0)
+        {
+            progressText.text = $"{capturePointName}\nATTACKER\n{displayPercent:F0}%";
+            progressText.color = attackerColor;
+        }
+        else if (captureProgress < 0)
+        {
+            progressText.text = $"{capturePointName}\nDEFENDER\n{displayPercent:F0}%";
+            progressText.color = defenderColor;
+        }
+        else
+        {
+            progressText.text = $"{capturePointName}\nNEUTRAL\n0%";
+            progressText.color = neutralColor;
+        }
     }
 
     void UpdateFlatTextPosition()
