@@ -97,8 +97,19 @@ public class StoreManager : MonoBehaviour
         {
             bool canAfford = currentXP >= sb.unit.xpCost;
             bool ownsBase = sb.sourceBase.IsControlledBy(playerFaction);
-            sb.button.interactable = canAfford && ownsBase;
+            bool withinDeploymentLimit = IsWithinSpecialistDeploymentLimit(sb.unit, playerFaction);
+            sb.button.interactable = canAfford && ownsBase && withinDeploymentLimit;
         }
+    }
+
+    private bool IsWithinSpecialistDeploymentLimit(PurchasableUnit unit, Faction faction)
+    {
+        if (unit == null || unit.GetResolvedCategory() != UnitCategory.Infantry) return true;
+        if (!unit.TryGetResolvedInfantryClass(out UnitClass unitClass)) return true;
+        if (unitClass == UnitClass.Assault) return true;
+
+        SpecialistDeploymentTracker tracker = SpecialistDeploymentTracker.EnsureInstance();
+        return tracker == null || tracker.CanDeploy(faction, unitClass);
     }
 
     private void PurchaseUnit(PurchasableUnit unit, CapturePoint sourceBase)
@@ -111,6 +122,21 @@ public class StoreManager : MonoBehaviour
             : GameManager.Instance.defenderXP;
 
         if (currentXP < unit.xpCost || !sourceBase.IsControlledBy(playerFaction)) return;
+
+        UnitClass resolvedClass = UnitClass.Assault;
+        bool isSpecialist = unit.GetResolvedCategory() == UnitCategory.Infantry &&
+                            unit.TryGetResolvedInfantryClass(out resolvedClass) &&
+                            resolvedClass != UnitClass.Assault;
+
+        if (isSpecialist)
+        {
+            SpecialistDeploymentTracker tracker = SpecialistDeploymentTracker.EnsureInstance();
+            if (tracker != null && !tracker.TryRegisterDeployment(playerFaction, resolvedClass))
+            {
+                RefreshButtonStates();
+                return;
+            }
+        }
 
         if (playerFaction == Faction.Attacker)
         {
@@ -139,6 +165,7 @@ public class StoreManager : MonoBehaviour
         if (!unit.TryGetResolvedInfantryClass(out UnitClass unitClass)) return;
 
         UnitClassIdentity.Ensure(spawnedUnit, unitClass);
+        ReconUnitProfile.ApplyIfRecon(spawnedUnit);
 
         if (unitClass == UnitClass.Assault) return;
 
