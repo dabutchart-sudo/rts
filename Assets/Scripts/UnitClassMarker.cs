@@ -10,7 +10,7 @@ public sealed class UnitClassMarker : MonoBehaviour
 {
     [Header("Top-Face Class Icon")]
     [Tooltip("Placed slightly above the cube top to prevent z-fighting while still reading as painted on.")]
-    [SerializeField] private float markerHeight = 0.52f;
+    [SerializeField] private float markerHeight = 0.56f;
     [Tooltip("Sized to cover roughly three quarters of the visible top face.")]
     [SerializeField] private float markerScale = 0.72f;
     [SerializeField] private float fontSize = 9f;
