@@ -1,28 +1,44 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using TMPro;
 using System.Collections;
 using System.Collections.Generic;
 
+/// <summary>
+/// Shared gameplay HUD. This object is intentionally map-independent and survives scene loads,
+/// so every battlefield uses the same HUD instance and layout.
+/// </summary>
 public class UIManager : MonoBehaviour
 {
     public static UIManager Instance;
 
     [Header("UI Text References")]
-    public TextMeshProUGUI statsText;
+    public TextMeshProUGUI ticketText;
     public TextMeshProUGUI captureText;
     public TextMeshProUGUI gameOverText;
 
-    [Header("Readability")]
-    [Tooltip("Multiplier applied to the right-side capture status panel font at runtime.")]
-    public float capturePanelFontMultiplier = 2f;
-
     private readonly Dictionary<string, string> capturePointStatuses = new Dictionary<string, string>();
-    private bool captureFontScaled = false;
 
     void Awake()
     {
-        if (Instance == null) Instance = this;
-        else Destroy(gameObject);
+        if (Instance != null && Instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
+        Instance = this;
+        DontDestroyOnLoad(gameObject);
+        SceneManager.sceneLoaded += OnSceneLoaded;
+    }
+
+    void OnDestroy()
+    {
+        if (Instance == this)
+        {
+            SceneManager.sceneLoaded -= OnSceneLoaded;
+            Instance = null;
+        }
     }
 
     void Start()
@@ -32,40 +48,43 @@ public class UIManager : MonoBehaviour
             gameOverText.gameObject.SetActive(false);
         }
 
-        ApplyCapturePanelReadability();
+        RefreshTickets();
     }
 
     void Update()
     {
-        ApplyCapturePanelReadability();
+        RefreshTickets();
+    }
 
-        if (GameManager.Instance != null && statsText != null)
+    private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        capturePointStatuses.Clear();
+        if (captureText != null) captureText.text = string.Empty;
+
+        if (gameOverText != null)
         {
-            int attTickets = GameManager.Instance.attackerTickets;
-            int attXP = GameManager.Instance.attackerXP;
-            int defXP = GameManager.Instance.defenderXP;
-            Faction playerFaction = GameManager.Instance.playerFaction;
+            StopAllCoroutines();
+            gameOverText.gameObject.SetActive(false);
+        }
 
-            string attackerYou = playerFaction == Faction.Attacker ? "  <size=75%><b>[YOU]</b></size>" : string.Empty;
-            string defenderYou = playerFaction == Faction.Defender ? "  <size=75%><b>[YOU]</b></size>" : string.Empty;
+        RefreshTickets();
+    }
 
-            statsText.text =
-                $"<color=#5A9BD5><b>ATTACKERS</b>{attackerYou}</color>\n" +
-                $"Tickets: {attTickets}   |   XP: {attXP}\n\n" +
-                $"<color=#C00000><b>DEFENDERS</b>{defenderYou}</color>\n" +
-                $"XP: {defXP}";
+    private void RefreshTickets()
+    {
+        if (ticketText == null || GameManager.Instance == null) return;
+        ticketText.text = $"Tickets: {Mathf.Max(0, GameManager.Instance.attackerTickets)}";
+    }
+
+    public void UpdateTickets(int tickets)
+    {
+        if (ticketText != null)
+        {
+            ticketText.text = $"Tickets: {Mathf.Max(0, tickets)}";
         }
     }
 
-    private void ApplyCapturePanelReadability()
-    {
-        if (captureFontScaled || captureText == null) return;
-
-        captureText.fontSize *= Mathf.Max(1f, capturePanelFontMultiplier);
-        captureFontScaled = true;
-    }
-
-    public void UpdateTickets(int tickets) { }
+    // XP remains available to gameplay/debug systems, but is intentionally not part of the normal HUD.
     public void UpdateXP(int currentXP) { }
 
     public void UpdateCaptureStatus(string capturePointName, float progress, int attackers, int defenders)
@@ -73,20 +92,20 @@ public class UIManager : MonoBehaviour
         if (captureText == null) return;
 
         int displayPercentage = Mathf.Abs(Mathf.RoundToInt(progress));
-        string statusText = "";
-        string colorHex = "#FFFFFF";
+        string statusText;
+        string colorHex;
 
         if (progress >= 100f)
         {
             statusText = capturePointName + ": SECURED (100%)";
             colorHex = "#00FFFF";
         }
-        else if (progress > 0)
+        else if (progress > 0f)
         {
             statusText = capturePointName + ": Capturing (" + displayPercentage + "% Atk)";
             colorHex = "#00FFFF";
         }
-        else if (progress == 0)
+        else if (Mathf.Approximately(progress, 0f))
         {
             statusText = capturePointName + ": Neutralized (0%)";
             colorHex = "#FFFFFF";
@@ -112,7 +131,7 @@ public class UIManager : MonoBehaviour
 
         capturePointStatuses[capturePointName] = $"<color={colorHex}>{statusText}</color>";
 
-        string combinedText = "";
+        string combinedText = string.Empty;
         foreach (string status in capturePointStatuses.Values)
         {
             combinedText += status + "\n";
@@ -123,22 +142,21 @@ public class UIManager : MonoBehaviour
 
     public void ShowSectorCapturedBanner(string message)
     {
-        if (gameOverText != null)
-        {
-            StopAllCoroutines();
-            StartCoroutine(FlashSectorBanner(message));
-        }
+        if (gameOverText == null) return;
+        StopAllCoroutines();
+        StartCoroutine(FlashSectorBanner(message));
     }
 
     public void ShowIntermissionBanner(string header, float secondsRemaining)
     {
-        if (gameOverText != null)
-        {
-            StopAllCoroutines();
-            gameOverText.gameObject.SetActive(true);
-            int ceilSeconds = Mathf.CeilToInt(Mathf.Max(0, secondsRemaining));
-            gameOverText.text = $"<size=110%><color=#FFD700><b>{header}</b></color></size>\n<size=85%>Next Sector In: <color=#00FFFF><b>{ceilSeconds}s</b></color></size>";
-        }
+        if (gameOverText == null) return;
+
+        StopAllCoroutines();
+        gameOverText.gameObject.SetActive(true);
+        int ceilSeconds = Mathf.CeilToInt(Mathf.Max(0f, secondsRemaining));
+        gameOverText.text =
+            $"<size=110%><color=#FFD700><b>{header}</b></color></size>\n" +
+            $"<size=85%>Next Sector In: <color=#00FFFF><b>{ceilSeconds}s</b></color></size>";
     }
 
     private IEnumerator FlashSectorBanner(string message)
@@ -151,17 +169,16 @@ public class UIManager : MonoBehaviour
 
     public void ShowGameOver(string message)
     {
-        if (gameOverText != null)
-        {
-            StopAllCoroutines();
-            gameOverText.gameObject.SetActive(true);
-            gameOverText.text = message;
-        }
+        if (gameOverText == null) return;
+
+        StopAllCoroutines();
+        gameOverText.gameObject.SetActive(true);
+        gameOverText.text = message;
     }
 
     public void ClearSectorStatuses()
     {
         capturePointStatuses.Clear();
-        if (captureText != null) captureText.text = "";
+        if (captureText != null) captureText.text = string.Empty;
     }
 }
