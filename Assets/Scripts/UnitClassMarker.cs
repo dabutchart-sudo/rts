@@ -3,15 +3,17 @@ using UnityEngine;
 
 /// <summary>
 /// Authoritative class marker painted onto the top face of infantry units.
-/// The floating marker is reserved for squad number, while class is conveyed by shape:
+/// Floating text is reserved for squad number, while class is conveyed by shape:
 /// Assault=triangle, Engineer=crossed mark, Recon=target, Support=plus.
 /// </summary>
 public sealed class UnitClassMarker : MonoBehaviour
 {
     [Header("Top-Face Class Icon")]
-    [SerializeField] private float markerHeight = 1.02f;
-    [SerializeField] private float markerScale = 0.18f;
-    [SerializeField] private float fontSize = 8f;
+    [Tooltip("Placed just above the cube top to avoid z-fighting while still reading as painted on.")]
+    [SerializeField] private float markerHeight = 0.505f;
+    [Tooltip("Sized to cover roughly three quarters of the visible top face.")]
+    [SerializeField] private float markerScale = 0.72f;
+    [SerializeField] private float fontSize = 9f;
 
     private TextMeshPro markerText;
     private UnitClassIdentity identity;
@@ -53,7 +55,7 @@ public sealed class UnitClassMarker : MonoBehaviour
         markerText.fontSize = fontSize;
         markerText.fontStyle = FontStyles.Bold;
         markerText.color = Color.white;
-        markerText.outlineWidth = 0.18f;
+        markerText.outlineWidth = 0.12f;
         markerText.outlineColor = Color.black;
         markerText.enableAutoSizing = false;
         markerText.raycastTarget = false;
