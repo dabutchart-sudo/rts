@@ -17,9 +17,9 @@ public sealed class UnitCombatPresentation : MonoBehaviour
     [SerializeField] private float spawnDropDuration = 0.32f;
 
     [Header("Death Shatter")]
-    [SerializeField, Range(4, 16)] private int fragmentCount = 9;
-    [SerializeField] private float fragmentLifetime = 1.6f;
-    [SerializeField] private float fragmentForce = 4.8f;
+    [SerializeField, Range(4, 12)] private int fragmentCount = 6;
+    [SerializeField] private float fragmentLifetime = 2.4f;
+    [SerializeField] private float fragmentForce = 0.75f;
 
     private readonly List<RendererState> rendererStates = new List<RendererState>();
     private Coroutine flashRoutine;
@@ -59,18 +59,25 @@ public sealed class UnitCombatPresentation : MonoBehaviour
         Bounds bounds = ResolveBounds();
         Vector3 centre = bounds.size.sqrMagnitude > 0f ? bounds.center : transform.position + Vector3.up * 0.5f;
 
+        // The intention is a unit losing structural integrity and collapsing, not detonating.
+        // Chunk colliders remain enabled so the fragments actually hit the battlefield and settle.
         for (int i = 0; i < fragmentCount; i++)
         {
             GameObject fragment = GameObject.CreatePrimitive(PrimitiveType.Cube);
             fragment.name = "DeathFragment";
-            fragment.transform.position = centre + Random.insideUnitSphere * 0.35f;
+
+            Vector3 localScatter = new Vector3(
+                Random.Range(-0.32f, 0.32f),
+                Random.Range(-0.18f, 0.28f),
+                Random.Range(-0.32f, 0.32f));
+            fragment.transform.position = centre + localScatter;
             fragment.transform.rotation = Random.rotation;
 
-            float size = Random.Range(0.16f, 0.30f);
-            fragment.transform.localScale = Vector3.one * size;
-
-            Collider collider = fragment.GetComponent<Collider>();
-            if (collider != null) collider.enabled = false;
+            float size = Random.Range(0.22f, 0.38f);
+            fragment.transform.localScale = new Vector3(
+                size * Random.Range(0.75f, 1.25f),
+                size * Random.Range(0.75f, 1.25f),
+                size * Random.Range(0.75f, 1.25f));
 
             Renderer renderer = fragment.GetComponent<Renderer>();
             if (renderer != null)
@@ -82,14 +89,22 @@ public sealed class UnitCombatPresentation : MonoBehaviour
             }
 
             Rigidbody body = fragment.AddComponent<Rigidbody>();
-            body.mass = 0.08f;
+            body.mass = 0.12f;
             body.useGravity = true;
-            Vector3 outward = (fragment.transform.position - centre).normalized;
-            if (outward == Vector3.zero) outward = Random.onUnitSphere;
-            outward.y = Mathf.Abs(outward.y) + 0.35f;
-            body.AddForce(outward.normalized * Random.Range(fragmentForce * 0.65f, fragmentForce * 1.25f), ForceMode.Impulse);
-            body.AddTorque(Random.insideUnitSphere * 7f, ForceMode.Impulse);
+            body.linearDamping = 0.45f;
+            body.angularDamping = 0.7f;
 
+            Vector3 gentlePush = new Vector3(
+                Random.Range(-1f, 1f),
+                Random.Range(0.05f, 0.32f),
+                Random.Range(-1f, 1f));
+
+            if (gentlePush.sqrMagnitude > 0.001f)
+            {
+                body.AddForce(gentlePush.normalized * Random.Range(fragmentForce * 0.35f, fragmentForce), ForceMode.Impulse);
+            }
+
+            body.AddTorque(Random.insideUnitSphere * 1.4f, ForceMode.Impulse);
             Destroy(fragment, fragmentLifetime);
         }
     }
