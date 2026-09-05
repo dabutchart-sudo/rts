@@ -75,6 +75,7 @@ public static class BattlefieldRuntimeLauncher
     {
         EnsureComponent<ControlModeManager>("ControlModeManager");
         EnsureComponent<ControlModeHUD>("ControlModeHUD");
+        MatchControlHUD.EnsureInstance();
 
         SpecialistDeploymentTracker.EnsureInstance();
         EnsureComponent<EngineerPurchasableBootstrap>("EngineerPurchasableBootstrap");
