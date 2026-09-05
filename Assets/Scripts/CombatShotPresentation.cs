@@ -35,7 +35,9 @@ public static class CombatShotPresentation
         TrailRenderer trail = projectile.GetComponent<TrailRenderer>();
         if (trail == null) trail = projectile.AddComponent<TrailRenderer>();
 
-        trail.time = isRecon ? 1.25f : 0.16f;
+        // Recon deliberately leaves a much longer-lived smoke line so that firing reveals
+        // the rough direction of the sniper to an observer/player.
+        trail.time = isRecon ? 2.75f : 0.16f;
         trail.startWidth = isRecon ? 0.14f : 0.07f;
         trail.endWidth = isRecon ? 0.035f : 0.015f;
         trail.minVertexDistance = 0.05f;
@@ -65,7 +67,8 @@ public static class CombatShotPresentation
                 new[]
                 {
                     new GradientAlphaKey(0.80f, 0f),
-                    new GradientAlphaKey(0.32f, 0.55f),
+                    new GradientAlphaKey(0.48f, 0.45f),
+                    new GradientAlphaKey(0.20f, 0.78f),
                     new GradientAlphaKey(0f, 1f)
                 });
             trail.colorGradient = gradient;
