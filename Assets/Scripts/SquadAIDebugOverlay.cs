@@ -25,17 +25,33 @@ public sealed class SquadAIDebugOverlay : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void EnsureRuntimeOverlay()
     {
-        if (instance != null) return;
+        EnsureInstance(false);
+    }
 
-        SquadAIDebugOverlay existing = FindAnyObjectByType<SquadAIDebugOverlay>(FindObjectsInactive.Include);
-        if (existing != null)
+    public static SquadAIDebugOverlay EnsureInstance(bool showImmediately = false)
+    {
+        if (instance == null)
         {
-            instance = existing;
-            return;
+            instance = FindAnyObjectByType<SquadAIDebugOverlay>(FindObjectsInactive.Include);
         }
 
-        GameObject host = new GameObject("SquadAIDebugOverlay");
-        host.AddComponent<SquadAIDebugOverlay>();
+        if (instance == null)
+        {
+            GameObject host = new GameObject("SquadAIDebugOverlay");
+            instance = host.AddComponent<SquadAIDebugOverlay>();
+        }
+
+        if (showImmediately)
+        {
+            instance.SetVisible(true);
+        }
+
+        return instance;
+    }
+
+    public void SetVisible(bool isVisible)
+    {
+        visible = isVisible;
     }
 
     private void Awake()
