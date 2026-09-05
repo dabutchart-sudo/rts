@@ -1,13 +1,26 @@
 using System.Collections;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 public static class MatchBootstrapper
 {
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void StartMatchAutomatically()
     {
+        Scene activeScene = SceneManager.GetActiveScene();
+
+        // Bootstrap is only a selector and intentionally has no GameManager.
+        if (!activeScene.IsValid() || activeScene.name == MapSelection.BootstrapScene) return;
+
+        // Recovery safety: only start known battlefield scenes. Do not inject match state into
+        // utility/editor scenes that happen to be played directly.
+        if (activeScene.name != MapSelection.OriginalMapScene &&
+            activeScene.name != MapSelection.ChatGPTMapScene)
+        {
+            return;
+        }
+
         GameObject runner = new GameObject("MatchBootstrapper_Runtime");
-        Object.DontDestroyOnLoad(runner);
         runner.AddComponent<MatchBootstrapperRunner>();
     }
 
@@ -15,33 +28,28 @@ public static class MatchBootstrapper
     {
         private IEnumerator Start()
         {
-            // Allow the scene's Awake/Start methods to initialise first.
             yield return null;
 
             GameManager gameManager = GameManager.Instance;
             if (gameManager == null)
             {
-                Debug.LogError("MatchBootstrapper: No GameManager instance was found.");
+                Debug.LogError($"MatchBootstrapper: No GameManager instance was found in '{SceneManager.GetActiveScene().name}'.");
                 Destroy(gameObject);
                 yield break;
             }
 
-            // Automated test runs already have their own startup path.
+            // Preserve the known automated-test startup path if a test is already configured.
             if (gameManager.enableAutoTestMode || TestDashboardOverlay.CurrentMatchNumber > 1)
             {
                 Destroy(gameObject);
                 yield break;
             }
 
-            // Hide the old faction-selection menu completely. It is no longer part of the normal flow.
+            // For the first recovery checkpoint we do not delete or rewrite any menu/UI scene
+            // objects. We simply bypass the obsolete faction menu at runtime.
             if (gameManager.factionSelectionUI != null)
             {
                 gameManager.factionSelectionUI.SetActive(false);
-            }
-            else
-            {
-                GameObject oldMenu = GameObject.Find("Canvas_FactionSelect");
-                if (oldMenu != null) oldMenu.SetActive(false);
             }
 
             if (gameManager.playerGameplayUI != null)
@@ -49,10 +57,8 @@ public static class MatchBootstrapper
                 gameManager.playerGameplayUI.SetActive(true);
             }
 
-            // The design calls for the player's side to be assigned randomly each round.
             Faction assignedFaction = Random.value < 0.5f ? Faction.Attacker : Faction.Defender;
-
-            Debug.Log($"MatchBootstrapper: randomly assigned player faction = {assignedFaction}.");
+            Debug.Log($"MatchBootstrapper: recovery launch, player faction = {assignedFaction}.");
 
             if (assignedFaction == Faction.Attacker)
             {
