@@ -12,9 +12,8 @@ using UnityEngine.SceneManagement;
 /// ChatGPT Map's own sectors/objectives/bases by the existing greybox wiring pass.
 ///
 /// Recovery rule: the donor scene owns shared presentation/runtime infrastructure. ChatGPT Map
-/// owns battlefield content. This installer therefore copies the complete gameplay UI family
-/// while explicitly excluding the obsolete BATTLEBLOCKS front end, then removes duplicate
-/// cameras/listeners/EventSystems from the target scene.
+/// owns battlefield content. The copied gameplay root is therefore authoritative for gameplay
+/// canvases, input and the RTS camera; target-scene duplicates are removed before saving.
 /// </summary>
 public static class ChatGPTMapGameplayInstaller
 {
@@ -70,48 +69,42 @@ public static class ChatGPTMapGameplayInstaller
             return;
         }
 
-        // These belong to the battlefield, not to shared gameplay infrastructure.
         copiedGameManager.sectors = new Sector[0];
         copiedGameManager.currentSectorIndex = 0;
         copiedGameManager.battlefieldParent = null;
         copiedGameManager.factionSelectionUI = null;
         copiedGameManager.playerFaction = Faction.None;
         copiedGameManager.enableAutoTestMode = false;
-
         EditorUtility.SetDirty(copiedGameManager);
 
-        // The donor root is now authoritative for runtime presentation/input. Remove only
-        // duplicate target-scene infrastructure; map geometry and map-owned world objects remain.
-        DeduplicatePresentationInfrastructure(chatGPT, exportRoot);
+        MakeCopiedPresentationAuthoritative(chatGPT, exportRoot);
 
-        // Reuse the already-tested greybox binder to provide map-specific objectives, bases,
-        // sectors, spawner positions and navigation.
         GreyboxBattlefieldGameplayWiring.WireForPlay();
         GreyboxSpawnerReferenceRepair.Repair();
         GreyboxBattlefieldReadabilityPass.Apply();
+
+        // Wiring/readability can touch scene objects, so enforce presentation uniqueness once more
+        // immediately before save.
+        MakeCopiedPresentationAuthoritative(chatGPT, exportRoot);
 
         EditorSceneManager.MarkSceneDirty(chatGPT);
         EditorSceneManager.SaveScene(chatGPT);
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
 
-        // The Original Map was opened only as a donor and is deliberately closed without save.
         EditorSceneManager.CloseScene(original, true);
         EditorSceneManager.SetActiveScene(chatGPT);
-
         Selection.activeGameObject = exportRoot;
 
         Debug.Log(
-            "CHATGPT MAP INSTALL: Gameplay systems copied from the known-good Original Map and " +
-            "rebound to ChatGPT Map. Complete gameplay canvases copied; obsolete BATTLEBLOCKS UI excluded; " +
-            "duplicate EventSystems/cameras/audio listeners removed. Original Map was not saved or modified. " +
-            "Test Bootstrap > ChatGPT Map before committing the regenerated scene.");
+            "CHATGPT MAP INSTALL: Shared gameplay presentation is authoritative. " +
+            "Duplicate gameplay canvases, EventSystems, cameras and AudioListeners were removed/disabled; " +
+            "Original Map was not saved or modified. Test Bootstrap > ChatGPT Map before committing the scene.");
     }
 
     private static GameObject BuildCopiedSystemsRoot(GameManager gameManager, Scene sourceScene)
     {
         GameObject exportRoot = new GameObject(SharedRootName);
-
         HashSet<GameObject> candidates = new HashSet<GameObject>();
 
         AddCandidate(candidates, gameManager.gameObject);
@@ -128,15 +121,11 @@ public static class ChatGPTMapGameplayInstaller
         AddAllOfType<EventSystem>(candidates, sourceScene);
         AddAllOfType<TestDashboardOverlay>(candidates, sourceScene);
 
-        // Copy every gameplay canvas family from the known-good donor rather than only the one
-        // referenced directly by GameManager. This restores sidebars/store/control presentation
-        // that lives in sibling canvases, while filtering the obsolete recovered front end.
         Canvas[] canvases = Object.FindObjectsByType<Canvas>(FindObjectsInactive.Include, FindObjectsSortMode.None);
         foreach (Canvas canvas in canvases)
         {
             if (canvas == null || canvas.gameObject.scene != sourceScene) continue;
             if (IsObsoleteFrontEnd(canvas.transform)) continue;
-
             AddCandidate(candidates, GetTopmostSceneObject(canvas.gameObject, sourceScene));
         }
 
@@ -150,11 +139,9 @@ public static class ChatGPTMapGameplayInstaller
         RemoveNestedCandidates(candidates);
 
         Dictionary<Object, Object> remap = new Dictionary<Object, Object>();
-
         foreach (GameObject source in candidates)
         {
             if (source == null || source.scene != sourceScene) continue;
-
             GameObject clone = Object.Instantiate(source, exportRoot.transform);
             clone.name = source.name;
             BuildObjectMap(source, clone, remap);
@@ -163,6 +150,82 @@ public static class ChatGPTMapGameplayInstaller
         RemapCopiedReferences(exportRoot, remap);
         RemoveObsoleteFrontEndFromCopy(exportRoot);
         return exportRoot;
+    }
+
+    private static void MakeCopiedPresentationAuthoritative(Scene targetScene, GameObject authoritativeRoot)
+    {
+        HashSet<string> authoritativeCanvasNames = new HashSet<string>();
+        Canvas[] rootCanvases = authoritativeRoot.GetComponentsInChildren<Canvas>(true);
+        foreach (Canvas canvas in rootCanvases)
+        {
+            if (canvas != null && !string.IsNullOrEmpty(canvas.gameObject.name))
+            {
+                authoritativeCanvasNames.Add(canvas.gameObject.name);
+            }
+        }
+
+        Canvas[] allCanvases = Object.FindObjectsByType<Canvas>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        foreach (Canvas canvas in allCanvases)
+        {
+            if (canvas == null || canvas.gameObject.scene != targetScene) continue;
+            if (IsInside(canvas.transform, authoritativeRoot.transform)) continue;
+            if (!authoritativeCanvasNames.Contains(canvas.gameObject.name)) continue;
+
+            Object.DestroyImmediate(canvas.gameObject);
+        }
+
+        EventSystem authoritativeEventSystem = authoritativeRoot.GetComponentInChildren<EventSystem>(true);
+        EventSystem[] eventSystems = Object.FindObjectsByType<EventSystem>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        foreach (EventSystem eventSystem in eventSystems)
+        {
+            if (eventSystem == null || eventSystem.gameObject.scene != targetScene) continue;
+            if (eventSystem == authoritativeEventSystem) continue;
+            Object.DestroyImmediate(eventSystem.gameObject);
+        }
+
+        RTSCamera authoritativeRTSCamera = authoritativeRoot.GetComponentInChildren<RTSCamera>(true);
+        Camera authoritativeCamera = authoritativeRTSCamera != null
+            ? authoritativeRTSCamera.GetComponent<Camera>()
+            : authoritativeRoot.GetComponentInChildren<Camera>(true);
+
+        Camera[] cameras = Object.FindObjectsByType<Camera>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        foreach (Camera camera in cameras)
+        {
+            if (camera == null || camera.gameObject.scene != targetScene) continue;
+            if (camera == authoritativeCamera)
+            {
+                camera.enabled = true;
+                EditorUtility.SetDirty(camera);
+                continue;
+            }
+
+            camera.enabled = false;
+            AudioListener extraListener = camera.GetComponent<AudioListener>();
+            if (extraListener != null) Object.DestroyImmediate(extraListener);
+            EditorUtility.SetDirty(camera);
+        }
+
+        AudioListener authoritativeListener = authoritativeCamera != null
+            ? authoritativeCamera.GetComponent<AudioListener>()
+            : null;
+
+        AudioListener[] listeners = Object.FindObjectsByType<AudioListener>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        foreach (AudioListener listener in listeners)
+        {
+            if (listener == null || listener.gameObject.scene != targetScene) continue;
+            if (listener == authoritativeListener) continue;
+            Object.DestroyImmediate(listener);
+        }
+
+        int canvasCount = authoritativeRoot.GetComponentsInChildren<Canvas>(true).Length;
+        int eventCount = Object.FindObjectsByType<EventSystem>(FindObjectsInactive.Include, FindObjectsSortMode.None).Length;
+        int listenerCount = Object.FindObjectsByType<AudioListener>(FindObjectsInactive.Include, FindObjectsSortMode.None).Length;
+        Debug.Log($"CHATGPT MAP PRESENTATION: donor canvases={canvasCount}, EventSystems={eventCount}, AudioListeners={listenerCount}.");
+    }
+
+    private static bool IsInside(Transform item, Transform root)
+    {
+        return item == root || item.IsChildOf(root);
     }
 
     private static void AddCandidate(HashSet<GameObject> set, GameObject candidate)
@@ -184,13 +247,11 @@ public static class ChatGPTMapGameplayInstaller
     private static GameObject GetTopmostSceneObject(GameObject gameObject, Scene scene)
     {
         if (gameObject == null) return null;
-
         Transform current = gameObject.transform;
         while (current.parent != null && current.parent.gameObject.scene == scene)
         {
             current = current.parent;
         }
-
         return current.gameObject;
     }
 
@@ -201,14 +262,9 @@ public static class ChatGPTMapGameplayInstaller
         {
             if (current.name == "Canvas_FactionSelect" ||
                 current.name == "MainMenu_Container" ||
-                current.name == "Canvas_MainMenu")
-            {
-                return true;
-            }
-
+                current.name == "Canvas_MainMenu") return true;
             current = current.parent;
         }
-
         return false;
     }
 
@@ -217,12 +273,8 @@ public static class ChatGPTMapGameplayInstaller
         List<GameObject> remove = new List<GameObject>();
         foreach (GameObject candidate in candidates)
         {
-            if (candidate != null && IsObsoleteFrontEnd(candidate.transform))
-            {
-                remove.Add(candidate);
-            }
+            if (candidate != null && IsObsoleteFrontEnd(candidate.transform)) remove.Add(candidate);
         }
-
         foreach (GameObject item in remove) candidates.Remove(item);
     }
 
@@ -232,7 +284,6 @@ public static class ChatGPTMapGameplayInstaller
         foreach (GameObject candidate in set)
         {
             if (candidate == null) continue;
-
             Transform parent = candidate.transform.parent;
             while (parent != null)
             {
@@ -244,7 +295,6 @@ public static class ChatGPTMapGameplayInstaller
                 parent = parent.parent;
             }
         }
-
         foreach (GameObject item in remove) set.Remove(item);
     }
 
@@ -258,10 +308,7 @@ public static class ChatGPTMapGameplayInstaller
         int componentCount = Mathf.Min(sourceComponents.Length, cloneComponents.Length);
         for (int i = 0; i < componentCount; i++)
         {
-            if (sourceComponents[i] != null && cloneComponents[i] != null)
-            {
-                map[sourceComponents[i]] = cloneComponents[i];
-            }
+            if (sourceComponents[i] != null && cloneComponents[i] != null) map[sourceComponents[i]] = cloneComponents[i];
         }
 
         int childCount = Mathf.Min(source.transform.childCount, clone.transform.childCount);
@@ -277,7 +324,6 @@ public static class ChatGPTMapGameplayInstaller
         foreach (Component component in components)
         {
             if (component == null) continue;
-
             SerializedObject serialized = new SerializedObject(component);
             SerializedProperty property = serialized.GetIterator();
             bool enterChildren = true;
@@ -286,12 +332,8 @@ public static class ChatGPTMapGameplayInstaller
             {
                 enterChildren = false;
                 if (property.propertyType != SerializedPropertyType.ObjectReference) continue;
-
                 Object referenced = property.objectReferenceValue;
-                if (referenced != null && map.TryGetValue(referenced, out Object replacement))
-                {
-                    property.objectReferenceValue = replacement;
-                }
+                if (referenced != null && map.TryGetValue(referenced, out Object replacement)) property.objectReferenceValue = replacement;
             }
 
             serialized.ApplyModifiedPropertiesWithoutUndo();
@@ -302,63 +344,19 @@ public static class ChatGPTMapGameplayInstaller
     {
         Transform[] transforms = exportRoot.GetComponentsInChildren<Transform>(true);
         List<GameObject> remove = new List<GameObject>();
-
         foreach (Transform item in transforms)
         {
             if (item == null || item == exportRoot.transform) continue;
-            if (item.name == "Canvas_FactionSelect" ||
-                item.name == "MainMenu_Container" ||
-                item.name == "Canvas_MainMenu")
-            {
-                remove.Add(item.gameObject);
-            }
+            if (item.name == "Canvas_FactionSelect" || item.name == "MainMenu_Container" || item.name == "Canvas_MainMenu") remove.Add(item.gameObject);
         }
-
-        foreach (GameObject item in remove)
-        {
-            if (item != null) Object.DestroyImmediate(item);
-        }
-    }
-
-    private static void DeduplicatePresentationInfrastructure(Scene targetScene, GameObject authoritativeRoot)
-    {
-        EventSystem[] eventSystems = Object.FindObjectsByType<EventSystem>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-        foreach (EventSystem eventSystem in eventSystems)
-        {
-            if (eventSystem == null || eventSystem.gameObject.scene != targetScene) continue;
-            if (eventSystem.transform == authoritativeRoot.transform || eventSystem.transform.IsChildOf(authoritativeRoot.transform)) continue;
-
-            Object.DestroyImmediate(eventSystem.gameObject);
-        }
-
-        AudioListener[] listeners = Object.FindObjectsByType<AudioListener>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-        foreach (AudioListener listener in listeners)
-        {
-            if (listener == null || listener.gameObject.scene != targetScene) continue;
-            if (listener.transform == authoritativeRoot.transform || listener.transform.IsChildOf(authoritativeRoot.transform)) continue;
-
-            Object.DestroyImmediate(listener);
-        }
-
-        Camera[] cameras = Object.FindObjectsByType<Camera>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-        foreach (Camera camera in cameras)
-        {
-            if (camera == null || camera.gameObject.scene != targetScene) continue;
-            if (camera.transform == authoritativeRoot.transform || camera.transform.IsChildOf(authoritativeRoot.transform)) continue;
-
-            camera.enabled = false;
-            EditorUtility.SetDirty(camera);
-        }
+        foreach (GameObject item in remove) if (item != null) Object.DestroyImmediate(item);
     }
 
     private static void RemoveExistingSharedRoot(Scene scene)
     {
         foreach (GameObject root in scene.GetRootGameObjects())
         {
-            if (root != null && root.name == SharedRootName)
-            {
-                Object.DestroyImmediate(root);
-            }
+            if (root != null && root.name == SharedRootName) Object.DestroyImmediate(root);
         }
     }
 }
