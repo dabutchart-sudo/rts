@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 using TMPro;
 using System.Collections;
 using System.Collections.Generic;
@@ -17,6 +18,7 @@ public class UIManager : MonoBehaviour
     public TextMeshProUGUI captureText;
     public TextMeshProUGUI gameOverText;
 
+    private GameObject xpHudRoot;
     private TextMeshProUGUI xpText;
     private readonly Dictionary<string, string> capturePointStatuses = new Dictionary<string, string>();
 
@@ -40,6 +42,13 @@ public class UIManager : MonoBehaviour
             SceneManager.sceneLoaded -= OnSceneLoaded;
             Instance = null;
         }
+
+        if (xpHudRoot != null)
+        {
+            Destroy(xpHudRoot);
+            xpHudRoot = null;
+            xpText = null;
+        }
     }
 
     void Start()
@@ -49,13 +58,13 @@ public class UIManager : MonoBehaviour
             gameOverText.gameObject.SetActive(false);
         }
 
-        EnsureXPText();
+        EnsureXPHUD();
         RefreshHUD();
     }
 
     void Update()
     {
-        EnsureXPText();
+        EnsureXPHUD();
         RefreshHUD();
     }
 
@@ -70,64 +79,73 @@ public class UIManager : MonoBehaviour
             gameOverText.gameObject.SetActive(false);
         }
 
-        xpText = null;
-        EnsureXPText();
+        EnsureXPHUD();
         RefreshHUD();
     }
 
-    private void EnsureXPText()
+    private void EnsureXPHUD()
     {
-        if (xpText != null) return;
-        if (ticketText == null) return;
+        if (xpText != null && xpHudRoot != null) return;
 
-        Canvas gameplayCanvas = ticketText.GetComponentInParent<Canvas>();
-        if (gameplayCanvas == null) return;
-
-        Transform existing = gameplayCanvas.transform.Find("XPText_Runtime");
-        if (existing != null)
+        if (xpHudRoot != null)
         {
-            xpText = existing.GetComponent<TextMeshProUGUI>();
-            if (xpText != null)
-            {
-                xpText.gameObject.SetActive(true);
-                xpText.transform.SetAsLastSibling();
-                return;
-            }
+            Destroy(xpHudRoot);
+            xpHudRoot = null;
+            xpText = null;
         }
 
-        // Keep XP directly on the gameplay Canvas rather than under the Tickets label's parent.
-        // Some recovered HUD containers are tightly sized/masked; parenting XP there can make the
-        // text exist correctly but be completely clipped from view.
-        GameObject xpObject = new GameObject("XPText_Runtime", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
-        xpObject.transform.SetParent(gameplayCanvas.transform, false);
-        xpObject.transform.SetAsLastSibling();
+        // Use a dedicated overlay canvas so recovered scene layout groups, masks, scaling and
+        // sibling order cannot clip or hide the XP block. This deliberately has no GraphicRaycaster
+        // because it is display-only and needs no EventSystem.
+        xpHudRoot = new GameObject("XP_HUD_Runtime", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler));
+        DontDestroyOnLoad(xpHudRoot);
 
-        RectTransform xpRect = xpObject.GetComponent<RectTransform>();
-        xpRect.anchorMin = new Vector2(0f, 1f);
-        xpRect.anchorMax = new Vector2(0f, 1f);
-        xpRect.pivot = new Vector2(0f, 1f);
-        xpRect.anchoredPosition = new Vector2(12f, -38f);
-        xpRect.sizeDelta = new Vector2(300f, 56f);
+        Canvas canvas = xpHudRoot.GetComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 500;
+
+        CanvasScaler scaler = xpHudRoot.GetComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920f, 1080f);
+        scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+        scaler.matchWidthOrHeight = 0f;
+
+        GameObject xpObject = new GameObject("XPText", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        xpObject.transform.SetParent(xpHudRoot.transform, false);
+
+        RectTransform rect = xpObject.GetComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0f, 1f);
+        rect.anchorMax = new Vector2(0f, 1f);
+        rect.pivot = new Vector2(0f, 1f);
+        rect.anchoredPosition = new Vector2(14f, -42f);
+        rect.sizeDelta = new Vector2(360f, 70f);
 
         xpText = xpObject.GetComponent<TextMeshProUGUI>();
-        xpText.font = ticketText.font;
-        xpText.fontSize = Mathf.Max(14f, ticketText.fontSize * 0.9f);
-        xpText.fontStyle = FontStyles.Normal;
-        xpText.color = ticketText.color;
+        if (ticketText != null && ticketText.font != null)
+        {
+            xpText.font = ticketText.font;
+            xpText.color = ticketText.color;
+        }
+        else
+        {
+            xpText.color = Color.white;
+        }
+
+        xpText.fontSize = 20f;
+        xpText.fontStyle = FontStyles.Bold;
         xpText.alignment = TextAlignmentOptions.TopLeft;
         xpText.enableWordWrapping = false;
         xpText.overflowMode = TextOverflowModes.Overflow;
         xpText.raycastTarget = false;
-        xpText.text = string.Empty;
+        xpText.text = "XP HUD INITIALISING";
 
-        Debug.Log($"UIManager: XP HUD created on canvas '{gameplayCanvas.name}'.");
+        Debug.Log("UIManager: dedicated XP overlay canvas created.");
     }
 
     private void RefreshHUD()
     {
-        if (GameManager.Instance == null) return;
-
         GameManager gameManager = GameManager.Instance;
+        if (gameManager == null) return;
 
         if (ticketText != null)
         {
@@ -136,8 +154,8 @@ public class UIManager : MonoBehaviour
 
         if (xpText == null) return;
 
-        // Development/Editor: both team totals are useful for AI balance observation.
-        // Release build: only the player's own team XP is exposed.
+        // Editor/development builds expose both team totals for AI tuning and observation.
+        // Normal release builds expose only the local player's team total.
         if (Application.isEditor || Debug.isDebugBuild)
         {
             xpText.text =
