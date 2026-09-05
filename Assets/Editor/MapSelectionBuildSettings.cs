@@ -1,54 +1,34 @@
-using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
-/// <summary>
-/// Keeps authored gameplay scenes available to the runtime map selector.
-/// This is intentionally an explicit editor command rather than silently rewriting project
-/// settings on every domain reload.
-/// </summary>
 public static class MapSelectionBuildSettings
 {
-    private const string DevelopmentScenePath = "Assets/Scenes/SampleScene.unity";
-    private const string GreyboxScenePath = "Assets/Scenes/GreyboxBattlefield01.unity";
+    private const string BootstrapPath = "Assets/Scenes/Bootstrap.unity";
+    private const string OriginalMapPath = "Assets/Scenes/RecoveredDevelopmentMap.unity";
+    private const string ChatGPTMapPath = "Assets/Scenes/GreyboxBattlefield01.unity";
 
-    [MenuItem("RTS/Maps/Ensure Gameplay Scenes In Build Settings")]
-    public static void EnsureGameplayScenes()
+    [MenuItem("RTS/Maps/Configure Recovery Map Selector")]
+    public static void ConfigureRecoverySelector()
     {
-        List<EditorBuildSettingsScene> scenes = new List<EditorBuildSettingsScene>(EditorBuildSettings.scenes);
-        bool changed = EnsureScene(scenes, DevelopmentScenePath);
-        changed |= EnsureScene(scenes, GreyboxScenePath);
+        string[] required = { BootstrapPath, OriginalMapPath, ChatGPTMapPath };
 
-        if (changed)
+        foreach (string path in required)
         {
-            EditorBuildSettings.scenes = scenes.ToArray();
-            AssetDatabase.SaveAssets();
-            Debug.Log("MAP SELECT: Development Test Map and Greybox Battlefield 01 are enabled in Build Settings.");
-        }
-        else
-        {
-            Debug.Log("MAP SELECT: Gameplay scenes are already enabled in Build Settings.");
-        }
-    }
-
-    private static bool EnsureScene(List<EditorBuildSettingsScene> scenes, string path)
-    {
-        for (int i = 0; i < scenes.Count; i++)
-        {
-            if (scenes[i].path != path) continue;
-
-            if (scenes[i].enabled) return false;
-            scenes[i] = new EditorBuildSettingsScene(path, true);
-            return true;
+            if (AssetDatabase.LoadAssetAtPath<SceneAsset>(path) == null)
+            {
+                Debug.LogError($"MAP SELECT: Required scene is missing: {path}");
+                return;
+            }
         }
 
-        if (AssetDatabase.LoadAssetAtPath<SceneAsset>(path) == null)
+        EditorBuildSettings.scenes = new[]
         {
-            Debug.LogWarning($"MAP SELECT: Cannot add missing scene '{path}'.");
-            return false;
-        }
+            new EditorBuildSettingsScene(BootstrapPath, true),
+            new EditorBuildSettingsScene(OriginalMapPath, true),
+            new EditorBuildSettingsScene(ChatGPTMapPath, true)
+        };
 
-        scenes.Add(new EditorBuildSettingsScene(path, true));
-        return true;
+        AssetDatabase.SaveAssets();
+        Debug.Log("MAP SELECT: Recovery selector configured. Bootstrap is scene 0; Original Map and ChatGPT Map are enabled. No gameplay scene was modified.");
     }
 }
