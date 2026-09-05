@@ -1,20 +1,17 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-/// <summary>
-/// Persistent map-selection state. The current project has one gameplay scene, but this
-/// deliberately uses scene names so additional authored maps can be added without changing
-/// the match systems. A future procedural generator can also register/select a generated map.
-/// </summary>
 public static class MapSelection
 {
     private const string SelectedMapKey = "RTS_SelectedMapScene";
-    public const string DevelopmentTestScene = "SampleScene";
-    public const string GreyboxBattlefieldScene = "GreyboxBattlefield01";
+
+    public const string BootstrapScene = "Bootstrap";
+    public const string OriginalMapScene = "RecoveredDevelopmentMap";
+    public const string ChatGPTMapScene = "GreyboxBattlefield01";
 
     public static string SelectedSceneName
     {
-        get => PlayerPrefs.GetString(SelectedMapKey, DevelopmentTestScene);
+        get => PlayerPrefs.GetString(SelectedMapKey, OriginalMapScene);
         set
         {
             if (string.IsNullOrWhiteSpace(value)) return;
@@ -23,33 +20,23 @@ public static class MapSelection
         }
     }
 
-    public static void SelectDevelopmentTestMap()
+    public static bool TryLoad(string sceneName)
     {
-        SelectedSceneName = DevelopmentTestScene;
-    }
+        if (string.IsNullOrWhiteSpace(sceneName)) return false;
 
-    public static void SelectGreyboxBattlefield()
-    {
-        SelectedSceneName = GreyboxBattlefieldScene;
-    }
-
-    public static bool TryLoadSelectedMap()
-    {
-        string sceneName = SelectedSceneName;
         if (!Application.CanStreamedLevelBeLoaded(sceneName))
         {
-            Debug.LogWarning($"MAP SELECT: Scene '{sceneName}' is not in Build Settings. Staying in the current scene.");
+            Debug.LogError($"MAP SELECT: Scene '{sceneName}' is not available in Build Settings.");
             return false;
         }
 
+        SelectedSceneName = sceneName;
         SceneManager.LoadScene(sceneName);
         return true;
     }
 
-    public static string GetSelectedDisplayName()
+    public static string GetDisplayName(string sceneName)
     {
-        return SelectedSceneName == GreyboxBattlefieldScene
-            ? "Greybox Battlefield 01"
-            : "Development Test Map";
+        return sceneName == ChatGPTMapScene ? "ChatGPT Map" : "Original Map";
     }
 }
