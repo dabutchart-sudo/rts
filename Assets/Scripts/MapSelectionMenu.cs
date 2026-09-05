@@ -26,7 +26,20 @@ public sealed class MapSelectionMenu : MonoBehaviour
         if (!activeScene.IsValid() || activeScene.name != MapSelection.BootstrapScene) return;
         if (FindAnyObjectByType<MapSelectionMenu>() != null) return;
 
+        EnsureBootstrapCamera();
         new GameObject("Map Selection Menu").AddComponent<MapSelectionMenu>();
+    }
+
+    private static void EnsureBootstrapCamera()
+    {
+        if (Camera.main != null) return;
+
+        GameObject cameraObject = new GameObject("Bootstrap Camera");
+        Camera camera = cameraObject.AddComponent<Camera>();
+        camera.clearFlags = CameraClearFlags.SolidColor;
+        camera.backgroundColor = new Color(0.025f, 0.035f, 0.045f, 1f);
+        camera.cullingMask = 0;
+        camera.depth = -100f;
     }
 
     private void OnDestroy()
@@ -86,9 +99,6 @@ public sealed class MapSelectionMenu : MonoBehaviour
         launchInProgress = true;
         MapSelection.SelectedSceneName = sceneName;
 
-        // Keep this known-good Bootstrap object alive just long enough to start the recovered
-        // GameManager after the selected scene has loaded. This avoids depending on another
-        // runtime-initialize callback during scene switching.
         DontDestroyOnLoad(gameObject);
         SceneManager.sceneLoaded += HandleBattlefieldLoaded;
         Debug.Log($"MAP SELECT: loading '{sceneName}'.");
@@ -100,12 +110,21 @@ public sealed class MapSelectionMenu : MonoBehaviour
         if (scene.name != MapSelection.SelectedSceneName) return;
 
         SceneManager.sceneLoaded -= HandleBattlefieldLoaded;
+
+        // Awake has completed by the time sceneLoaded fires, so the GameManager is available.
+        // Hide the recovered front end immediately, before the newly loaded scene can render a
+        // frame. Match startup itself still waits one frame so the rest of Start() can settle.
+        GameManager gameManager = GameManager.Instance;
+        if (gameManager != null)
+        {
+            HideRecoveredFrontEnd(scene, gameManager);
+        }
+
         StartCoroutine(StartRecoveredMatch(scene));
     }
 
     private IEnumerator StartRecoveredMatch(Scene scene)
     {
-        // Let the recovered scene complete Awake/Start first.
         yield return null;
 
         GameManager gameManager = GameManager.Instance;
@@ -118,6 +137,8 @@ public sealed class MapSelectionMenu : MonoBehaviour
 
         Debug.Log($"MAP SELECT: '{scene.name}' loaded. Starting recovered gameplay.");
 
+        // Repeat defensively in case any recovered Start() method re-enabled the old UI during
+        // the first frame. This remains runtime-only and is never saved into the scene asset.
         HideRecoveredFrontEnd(scene, gameManager);
 
         if (gameManager.playerGameplayUI != null)
@@ -125,8 +146,6 @@ public sealed class MapSelectionMenu : MonoBehaviour
             gameManager.playerGameplayUI.SetActive(true);
         }
 
-        // If the scene itself is already configured as an automated test, leave its existing
-        // GameManager startup path in control rather than starting a second match.
         if (!gameManager.enableAutoTestMode && TestDashboardOverlay.CurrentMatchNumber <= 1)
         {
             Faction assignedFaction = Random.value < 0.5f ? Faction.Attacker : Faction.Defender;
