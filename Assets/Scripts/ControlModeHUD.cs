@@ -20,6 +20,7 @@ public class ControlModeHUD : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void CreateHUD()
     {
+        if (!SceneRuntimeGate.IsBattlefieldScene()) return;
         if (FindAnyObjectByType<ControlModeHUD>(FindObjectsInactive.Include) != null) return;
 
         GameObject host = new GameObject("ControlModeHUD");
@@ -91,7 +92,7 @@ public class ControlModeHUD : MonoBehaviour
 
         if (gameplayCanvas == null)
         {
-            Debug.LogWarning("ControlModeHUD: Canvas_Gameplay was not found.");
+            Debug.LogWarning("ControlModeHUD: Canvas_Gameplay was not found in the battlefield scene.");
             return;
         }
 
