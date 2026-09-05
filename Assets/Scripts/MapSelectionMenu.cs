@@ -3,10 +3,9 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Recovery-safe battlefield selector. It exists only in the dedicated Bootstrap scene and
-/// deliberately does not alter, clean, initialise or otherwise touch either gameplay scene.
-/// Runtime systems that normally initialise on the first scene load are explicitly restored
-/// after the selected battlefield loads.
+/// Dedicated Bootstrap-scene battlefield selector.
+/// Battlefield startup is delegated to BattlefieldRuntimeLauncher so Bootstrap launches and
+/// direct-in-editor launches share the same runtime preparation and match-start rules.
 /// </summary>
 public sealed class MapSelectionMenu : MonoBehaviour
 {
@@ -66,7 +65,7 @@ public sealed class MapSelectionMenu : MonoBehaviour
         GUILayout.BeginArea(new Rect(panel.x + 34f * scale, panel.y + 28f * scale, panel.width - 68f * scale, panel.height - 56f * scale));
         GUILayout.Label("SELECT BATTLEFIELD", titleStyle);
         GUILayout.Space(4f * scale);
-        GUILayout.Label("Recovery build: choose a battlefield. No gameplay scene assets are modified by this selector.", subtitleStyle);
+        GUILayout.Label("Choose a battlefield. Both maps use the shared GameplaySystems package.", subtitleStyle);
         GUILayout.Space(28f * scale);
 
         if (GUILayout.Button("ORIGINAL MAP\n<size=70%>Recovered development battlefield</size>", buttonStyle, GUILayout.Height(92f * scale)))
@@ -82,7 +81,7 @@ public sealed class MapSelectionMenu : MonoBehaviour
         }
 
         GUILayout.FlexibleSpace();
-        GUILayout.Label("First checkpoint: verify Original Map gameplay before changing either scene.", smallStyle);
+        GUILayout.Label("Shared gameplay systems active across both battlefields.", smallStyle);
         GUILayout.EndArea();
     }
 
@@ -110,18 +109,12 @@ public sealed class MapSelectionMenu : MonoBehaviour
         if (scene.name != MapSelection.SelectedSceneName) return;
 
         SceneManager.sceneLoaded -= HandleBattlefieldLoaded;
-
-        GameManager gameManager = GameManager.Instance;
-        if (gameManager != null)
-        {
-            HideRecoveredFrontEnd(scene, gameManager);
-        }
-
-        StartCoroutine(StartRecoveredMatch(scene));
+        StartCoroutine(StartSelectedMatch(scene));
     }
 
-    private IEnumerator StartRecoveredMatch(Scene scene)
+    private IEnumerator StartSelectedMatch(Scene scene)
     {
+        // Allow the scene-owned GameplaySystems prefab one frame to complete Awake/Start.
         yield return null;
 
         GameManager gameManager = GameManager.Instance;
@@ -132,90 +125,11 @@ public sealed class MapSelectionMenu : MonoBehaviour
             yield break;
         }
 
-        Debug.Log($"MAP SELECT: '{scene.name}' loaded. Starting recovered gameplay.");
+        BattlefieldRuntimeLauncher.PrepareBattlefield(scene, gameManager);
+        Debug.Log($"MAP SELECT: '{scene.name}' loaded. Shared battlefield runtime prepared.");
 
-        HideRecoveredFrontEnd(scene, gameManager);
-
-        if (gameManager.playerGameplayUI != null)
-        {
-            gameManager.playerGameplayUI.SetActive(true);
-        }
-
-        EnsureBattlefieldRuntimeSystems();
-
-        if (!gameManager.enableAutoTestMode && TestDashboardOverlay.CurrentMatchNumber <= 1)
-        {
-            Faction assignedFaction = Random.value < 0.5f ? Faction.Attacker : Faction.Defender;
-            Debug.Log($"MAP SELECT: recovered match faction = {assignedFaction}.");
-
-            if (assignedFaction == Faction.Attacker)
-            {
-                gameManager.SelectAttackerFaction();
-            }
-            else
-            {
-                gameManager.SelectDefenderFaction();
-            }
-        }
-
+        BattlefieldRuntimeLauncher.StartNormalMatch(gameManager, "MAP SELECT");
         Destroy(gameObject);
-    }
-
-    /// <summary>
-    /// RuntimeInitializeOnLoadMethod is reliable for the initial Bootstrap scene but the
-    /// project's runtime-created battlefield helpers do not get another initialisation pass
-    /// after SceneManager.LoadScene. Explicitly ensure the normal gameplay services here.
-    /// </summary>
-    private static void EnsureBattlefieldRuntimeSystems()
-    {
-        EnsureComponent<ControlModeManager>("ControlModeManager");
-        EnsureComponent<ControlModeHUD>("ControlModeHUD");
-
-        SpecialistDeploymentTracker.EnsureInstance();
-        EnsureComponent<EngineerPurchasableBootstrap>("EngineerPurchasableBootstrap");
-        EnsureComponent<ReconPurchasableBootstrap>("ReconPurchasableBootstrap");
-        EnsureComponent<SupportPurchasableBootstrap>("SupportPurchasableBootstrap");
-        EnsureComponent<SpecialistAbilityBootstrap>("SpecialistAbilityBootstrap");
-
-        // The diagnostic panel and its objective-route lines were part of the normal prototype
-        // observation experience. Start them visible; G still toggles the panel at runtime.
-        SquadAIDebugOverlay.EnsureInstance(true);
-
-        Debug.Log("MAP SELECT: battlefield runtime HUD, control modes, specialist services and diagnostics restored.");
-    }
-
-    private static T EnsureComponent<T>(string objectName) where T : Component
-    {
-        T existing = FindAnyObjectByType<T>(FindObjectsInactive.Include);
-        if (existing != null) return existing;
-
-        GameObject host = new GameObject(objectName);
-        return host.AddComponent<T>();
-    }
-
-    private static void HideRecoveredFrontEnd(Scene scene, GameManager gameManager)
-    {
-        if (gameManager.factionSelectionUI != null)
-        {
-            gameManager.factionSelectionUI.SetActive(false);
-        }
-
-        GameObject[] roots = scene.GetRootGameObjects();
-        foreach (GameObject root in roots)
-        {
-            Transform[] transforms = root.GetComponentsInChildren<Transform>(true);
-            foreach (Transform item in transforms)
-            {
-                if (item == null) continue;
-
-                if (item.name == "Canvas_FactionSelect" ||
-                    item.name == "MainMenu_Container" ||
-                    item.name == "Canvas_MainMenu")
-                {
-                    item.gameObject.SetActive(false);
-                }
-            }
-        }
     }
 
     private void EnsureStyles()
