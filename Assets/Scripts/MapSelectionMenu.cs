@@ -1,9 +1,12 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
 /// Recovery-safe battlefield selector. It exists only in the dedicated Bootstrap scene and
 /// deliberately does not alter, clean, initialise or otherwise touch either gameplay scene.
+/// For the recovery checkpoint, startup is driven explicitly from this persistent selector
+/// rather than relying on RuntimeInitializeOnLoadMethod firing again after SceneManager.LoadScene.
 /// </summary>
 public sealed class MapSelectionMenu : MonoBehaviour
 {
@@ -14,6 +17,7 @@ public sealed class MapSelectionMenu : MonoBehaviour
     private Texture2D panelTexture;
     private Texture2D buttonTexture;
     private Texture2D buttonHoverTexture;
+    private bool launchInProgress;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void CreateInBootstrapOnly()
@@ -34,6 +38,8 @@ public sealed class MapSelectionMenu : MonoBehaviour
 
     private void OnGUI()
     {
+        if (launchInProgress) return;
+
         EnsureStyles();
 
         float scale = Mathf.Clamp(Mathf.Min(Screen.width / 1100f, Screen.height / 700f), 0.75f, 1.35f);
@@ -47,7 +53,7 @@ public sealed class MapSelectionMenu : MonoBehaviour
         GUILayout.BeginArea(new Rect(panel.x + 34f * scale, panel.y + 28f * scale, panel.width - 68f * scale, panel.height - 56f * scale));
         GUILayout.Label("SELECT BATTLEFIELD", titleStyle);
         GUILayout.Space(4f * scale);
-        GUILayout.Label("Recovery build: choose a battlefield. The selected scene then uses its own known gameplay startup.", subtitleStyle);
+        GUILayout.Label("Recovery build: choose a battlefield. No gameplay scene assets are modified by this selector.", subtitleStyle);
         GUILayout.Space(28f * scale);
 
         if (GUILayout.Button("ORIGINAL MAP\n<size=70%>Recovered development battlefield</size>", buttonStyle, GUILayout.Height(92f * scale)))
@@ -69,9 +75,98 @@ public sealed class MapSelectionMenu : MonoBehaviour
 
     private void Launch(string sceneName)
     {
-        if (MapSelection.TryLoad(sceneName))
+        if (launchInProgress) return;
+
+        if (!Application.CanStreamedLevelBeLoaded(sceneName))
         {
+            Debug.LogError($"MAP SELECT: Scene '{sceneName}' is not available in Build Settings.");
+            return;
+        }
+
+        launchInProgress = true;
+        MapSelection.SelectedSceneName = sceneName;
+
+        // Keep this known-good Bootstrap object alive just long enough to start the recovered
+        // GameManager after the selected scene has loaded. This avoids depending on another
+        // runtime-initialize callback during scene switching.
+        DontDestroyOnLoad(gameObject);
+        SceneManager.sceneLoaded += HandleBattlefieldLoaded;
+        Debug.Log($"MAP SELECT: loading '{sceneName}'.");
+        SceneManager.LoadScene(sceneName);
+    }
+
+    private void HandleBattlefieldLoaded(Scene scene, LoadSceneMode mode)
+    {
+        if (scene.name != MapSelection.SelectedSceneName) return;
+
+        SceneManager.sceneLoaded -= HandleBattlefieldLoaded;
+        StartCoroutine(StartRecoveredMatch(scene));
+    }
+
+    private IEnumerator StartRecoveredMatch(Scene scene)
+    {
+        // Let the recovered scene complete Awake/Start first.
+        yield return null;
+
+        GameManager gameManager = GameManager.Instance;
+        if (gameManager == null)
+        {
+            Debug.LogError($"MAP SELECT: '{scene.name}' loaded, but no GameManager instance was found.");
             Destroy(gameObject);
+            yield break;
+        }
+
+        Debug.Log($"MAP SELECT: '{scene.name}' loaded. Starting recovered gameplay.");
+
+        HideRecoveredFrontEnd(scene, gameManager);
+
+        if (gameManager.playerGameplayUI != null)
+        {
+            gameManager.playerGameplayUI.SetActive(true);
+        }
+
+        // If the scene itself is already configured as an automated test, leave its existing
+        // GameManager startup path in control rather than starting a second match.
+        if (!gameManager.enableAutoTestMode && TestDashboardOverlay.CurrentMatchNumber <= 1)
+        {
+            Faction assignedFaction = Random.value < 0.5f ? Faction.Attacker : Faction.Defender;
+            Debug.Log($"MAP SELECT: recovered match faction = {assignedFaction}.");
+
+            if (assignedFaction == Faction.Attacker)
+            {
+                gameManager.SelectAttackerFaction();
+            }
+            else
+            {
+                gameManager.SelectDefenderFaction();
+            }
+        }
+
+        Destroy(gameObject);
+    }
+
+    private static void HideRecoveredFrontEnd(Scene scene, GameManager gameManager)
+    {
+        if (gameManager.factionSelectionUI != null)
+        {
+            gameManager.factionSelectionUI.SetActive(false);
+        }
+
+        GameObject[] roots = scene.GetRootGameObjects();
+        foreach (GameObject root in roots)
+        {
+            Transform[] transforms = root.GetComponentsInChildren<Transform>(true);
+            foreach (Transform item in transforms)
+            {
+                if (item == null) continue;
+
+                if (item.name == "Canvas_FactionSelect" ||
+                    item.name == "MainMenu_Container" ||
+                    item.name == "Canvas_MainMenu")
+                {
+                    item.gameObject.SetActive(false);
+                }
+            }
         }
     }
 
