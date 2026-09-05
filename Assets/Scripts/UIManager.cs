@@ -17,6 +17,7 @@ public class UIManager : MonoBehaviour
     public TextMeshProUGUI captureText;
     public TextMeshProUGUI gameOverText;
 
+    private TextMeshProUGUI xpText;
     private readonly Dictionary<string, string> capturePointStatuses = new Dictionary<string, string>();
 
     void Awake()
@@ -48,12 +49,14 @@ public class UIManager : MonoBehaviour
             gameOverText.gameObject.SetActive(false);
         }
 
-        RefreshStatusBlock();
+        EnsureXPText();
+        RefreshHUD();
     }
 
     void Update()
     {
-        RefreshStatusBlock();
+        EnsureXPText();
+        RefreshHUD();
     }
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
@@ -67,48 +70,99 @@ public class UIManager : MonoBehaviour
             gameOverText.gameObject.SetActive(false);
         }
 
-        RefreshStatusBlock();
+        xpText = null;
+        EnsureXPText();
+        RefreshHUD();
     }
 
-    private void RefreshStatusBlock()
+    private void EnsureXPText()
     {
-        if (ticketText == null || GameManager.Instance == null) return;
+        if (xpText != null) return;
+        if (ticketText == null) return;
+
+        Transform parent = ticketText.transform.parent;
+        if (parent == null) return;
+
+        Transform existing = parent.Find("XPText_Runtime");
+        if (existing != null)
+        {
+            xpText = existing.GetComponent<TextMeshProUGUI>();
+            if (xpText != null) return;
+        }
+
+        GameObject xpObject = new GameObject("XPText_Runtime", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        xpObject.transform.SetParent(parent, false);
+
+        RectTransform ticketRect = ticketText.rectTransform;
+        RectTransform xpRect = xpObject.GetComponent<RectTransform>();
+
+        // Match the ticket label's anchoring, but place XP directly beneath it so the
+        // existing Tickets field can remain a compact single-line element.
+        xpRect.anchorMin = ticketRect.anchorMin;
+        xpRect.anchorMax = ticketRect.anchorMax;
+        xpRect.pivot = ticketRect.pivot;
+        xpRect.anchoredPosition = ticketRect.anchoredPosition + new Vector2(0f, -24f);
+        xpRect.sizeDelta = new Vector2(Mathf.Max(ticketRect.sizeDelta.x, 220f), 48f);
+
+        xpText = xpObject.GetComponent<TextMeshProUGUI>();
+        xpText.font = ticketText.font;
+        xpText.fontSize = Mathf.Max(12f, ticketText.fontSize * 0.9f);
+        xpText.fontStyle = FontStyles.Normal;
+        xpText.color = ticketText.color;
+        xpText.alignment = ticketText.alignment;
+        xpText.enableWordWrapping = false;
+        xpText.raycastTarget = false;
+        xpText.text = string.Empty;
+    }
+
+    private void RefreshHUD()
+    {
+        if (GameManager.Instance == null) return;
 
         GameManager gameManager = GameManager.Instance;
-        string text = $"Tickets: {Mathf.Max(0, gameManager.attackerTickets)}";
 
-        // During development we deliberately expose both teams' XP for tuning and observation.
-        // In a non-development player build, only the local player's team XP is shown.
+        if (ticketText != null)
+        {
+            ticketText.text = $"Tickets: {Mathf.Max(0, gameManager.attackerTickets)}";
+        }
+
+        if (xpText == null) return;
+
+        // Development/Editor: both team totals are useful for AI balance observation.
+        // Release build: only the player's own team XP is exposed.
         if (Application.isEditor || Debug.isDebugBuild)
         {
-            text += $"\nAttacker XP: {Mathf.Max(0, gameManager.attackerXP)}";
-            text += $"\nDefender XP: {Mathf.Max(0, gameManager.defenderXP)}";
+            xpText.text =
+                $"Attacker XP: {Mathf.Max(0, gameManager.attackerXP)}\n" +
+                $"Defender XP: {Mathf.Max(0, gameManager.defenderXP)}";
         }
         else
         {
             switch (gameManager.playerFaction)
             {
                 case Faction.Attacker:
-                    text += $"\nTeam XP: {Mathf.Max(0, gameManager.attackerXP)}";
+                    xpText.text = $"Team XP: {Mathf.Max(0, gameManager.attackerXP)}";
                     break;
 
                 case Faction.Defender:
-                    text += $"\nTeam XP: {Mathf.Max(0, gameManager.defenderXP)}";
+                    xpText.text = $"Team XP: {Mathf.Max(0, gameManager.defenderXP)}";
+                    break;
+
+                default:
+                    xpText.text = string.Empty;
                     break;
             }
         }
-
-        ticketText.text = text;
     }
 
     public void UpdateTickets(int tickets)
     {
-        RefreshStatusBlock();
+        RefreshHUD();
     }
 
     public void UpdateXP(int currentXP)
     {
-        RefreshStatusBlock();
+        RefreshHUD();
     }
 
     public void UpdateCaptureStatus(string capturePointName, float progress, int attackers, int defenders)
