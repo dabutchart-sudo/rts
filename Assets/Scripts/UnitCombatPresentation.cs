@@ -136,6 +136,16 @@ public sealed class UnitCombatPresentation : MonoBehaviour
         }
 
         if (combat != null && combatWasEnabled) combat.enabled = true;
+
+        // The strategic AI may have evaluated its objective while the NavMeshAgent was disabled.
+        // In that case it can remember the objective without ever assigning a path. Explicitly
+        // refresh the destination once the landing animation returns control to the agent.
+        AutonomousUnit autonomousUnit = GetComponent<AutonomousUnit>();
+        if (autonomousUnit != null)
+        {
+            autonomousUnit.UpdateDestination();
+        }
+
         SpawnLandingPuff(landingPosition);
     }
 
