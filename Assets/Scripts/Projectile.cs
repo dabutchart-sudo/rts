@@ -7,7 +7,7 @@ public class Projectile : MonoBehaviour
     public float damage = 25f;
     public float lifetime = 2.5f;
     public string targetTag = "Defender";
-    
+
     [Header("Armor Penetration")]
     public bool canDamageHeavyArmor = false;
 
@@ -17,7 +17,7 @@ public class Projectile : MonoBehaviour
 
     private Vector3 moveDirection = Vector3.forward;
 
-public void Initialize(Transform target, string enemyTag, float bulletDamage)
+    public void Initialize(Transform target, string enemyTag, float bulletDamage)
     {
         targetTag = enemyTag;
         damage = bulletDamage;
@@ -26,14 +26,13 @@ public void Initialize(Transform target, string enemyTag, float bulletDamage)
         {
             Vector3 targetCenter = target.position + Vector3.up * 0.5f;
             Vector3 calculatedDir = targetCenter - transform.position;
-            
-            // 🚨 FLATTEN Y: Ensure the bullet only travels horizontally across the terrain plane
-            calculatedDir.y = 0f; 
+
+            calculatedDir.y = 0f;
 
             if (calculatedDir != Vector3.zero) moveDirection = calculatedDir.normalized;
             else moveDirection = transform.forward;
         }
-        else 
+        else
         {
             moveDirection = transform.forward;
             moveDirection.y = 0f;
@@ -46,7 +45,7 @@ public void Initialize(Transform target, string enemyTag, float bulletDamage)
 
     void Start()
     {
-        moveDirection.y = 0f; // Force flat travel
+        moveDirection.y = 0f;
         if (moveDirection == Vector3.zero) moveDirection = transform.forward;
         Destroy(gameObject, lifetime);
     }
@@ -58,45 +57,43 @@ public void Initialize(Transform target, string enemyTag, float bulletDamage)
 
     void OnTriggerEnter(Collider other)
     {
-        // Ignore other projectiles
         if (other.GetComponent<Projectile>() != null) return;
 
-        // If the bullet hits a barricade, destroy the bullet immediately
         if (other.CompareTag("Cover"))
         {
-            SpawnImpactEffect();
+            SpawnImpactEffect(false);
             Destroy(gameObject);
             return;
         }
 
-        // If it hits the intended target, calculate damage
         if (other.CompareTag(targetTag))
         {
             Health enemyHealth = other.GetComponent<Health>();
             if (enemyHealth != null)
             {
-                // Bullet bounces off Heavy Armor harmlessly
                 if (enemyHealth.armor == Health.ArmorType.Heavy && !canDamageHeavyArmor)
                 {
-                    SpawnImpactEffect(); // Can act as a sparks/ricochet effect
-                    Destroy(gameObject); 
-                    return; 
+                    SpawnImpactEffect(true);
+                    Destroy(gameObject);
+                    return;
                 }
 
                 enemyHealth.TakeDamage(damage);
             }
-            SpawnImpactEffect();
+
+            SpawnImpactEffect(false);
             Destroy(gameObject);
         }
     }
 
-    void SpawnImpactEffect()
+    void SpawnImpactEffect(bool heavyRicochet)
     {
+        CombatShotPresentation.PlayImpact(transform.position, heavyRicochet);
+
         if (impactEffectPrefab != null)
         {
             GameObject effect = Instantiate(impactEffectPrefab, transform.position, Quaternion.identity);
-            // Automatically clean up the explosion effect after 2 seconds
-            Destroy(effect, 2f); 
+            Destroy(effect, 2f);
         }
     }
 }
