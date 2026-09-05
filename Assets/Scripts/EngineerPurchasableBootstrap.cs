@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 /// <summary>
 /// Ensures Engineer is available in the runtime specialist catalog for both factions.
@@ -16,6 +17,10 @@ public sealed class EngineerPurchasableBootstrap : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void EnsureRuntimeBootstrap()
     {
+        Scene scene = SceneManager.GetActiveScene();
+        if (!scene.IsValid()) return;
+        if (scene.name != MapSelection.OriginalMapScene && scene.name != MapSelection.ChatGPTMapScene) return;
+
         EngineerPurchasableBootstrap existing = FindAnyObjectByType<EngineerPurchasableBootstrap>(FindObjectsInactive.Include);
         if (existing != null) return;
 
