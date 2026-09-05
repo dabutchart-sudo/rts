@@ -200,6 +200,9 @@ public class Combat : MonoBehaviour
             shootRotation = transform.rotation;
         }
 
+        bool isRecon = UnitClassIdentity.GetClass(gameObject) == UnitClass.Recon;
+        CombatShotPresentation.PlayMuzzleFlash(spawnPos, shootRotation * Vector3.forward, isRecon);
+
         if (muzzleEffectPrefab != null && firePoint != null)
         {
             GameObject smoke = Instantiate(muzzleEffectPrefab, firePoint.position, firePoint.rotation);
@@ -207,6 +210,7 @@ public class Combat : MonoBehaviour
         }
 
         GameObject proj = Instantiate(projectilePrefab, spawnPos, shootRotation);
+        CombatShotPresentation.ConfigureProjectile(proj, isRecon);
 
         Projectile projScript = proj.GetComponent<Projectile>();
         if (projScript != null)
