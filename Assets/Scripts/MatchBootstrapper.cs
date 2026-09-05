@@ -2,14 +2,18 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-public static class MatchBootstrapper
+/// <summary>
+/// Recovery-safe runtime match starter. This is a concrete MonoBehaviour (rather than a
+/// nested runtime helper) so Unity can reliably execute its coroutine after a battlefield
+/// scene is loaded from Bootstrap.
+/// </summary>
+public sealed class MatchBootstrapper : MonoBehaviour
 {
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void StartMatchAutomatically()
     {
         Scene activeScene = SceneManager.GetActiveScene();
-
-        if (!activeScene.IsValid() || activeScene.name == MapSelection.BootstrapScene) return;
+        if (!activeScene.IsValid()) return;
 
         if (activeScene.name != MapSelection.OriginalMapScene &&
             activeScene.name != MapSelection.ChatGPTMapScene)
@@ -17,73 +21,76 @@ public static class MatchBootstrapper
             return;
         }
 
+        if (FindAnyObjectByType<MatchBootstrapper>() != null) return;
+
         GameObject runner = new GameObject("MatchBootstrapper_Runtime");
-        runner.AddComponent<MatchBootstrapperRunner>();
+        runner.AddComponent<MatchBootstrapper>();
     }
 
-    private sealed class MatchBootstrapperRunner : MonoBehaviour
+    private IEnumerator Start()
     {
-        private IEnumerator Start()
+        // Give the recovered scene one frame to finish Awake/Start initialisation.
+        yield return null;
+
+        GameManager gameManager = GameManager.Instance;
+        if (gameManager == null)
         {
-            yield return null;
-
-            GameManager gameManager = GameManager.Instance;
-            if (gameManager == null)
-            {
-                Debug.LogError($"MatchBootstrapper: No GameManager instance was found in '{SceneManager.GetActiveScene().name}'.");
-                Destroy(gameObject);
-                yield break;
-            }
-
-            if (gameManager.enableAutoTestMode || TestDashboardOverlay.CurrentMatchNumber > 1)
-            {
-                Destroy(gameObject);
-                yield break;
-            }
-
-            HideRecoveredFrontEnd(gameManager);
-
-            if (gameManager.playerGameplayUI != null)
-            {
-                gameManager.playerGameplayUI.SetActive(true);
-            }
-
-            Faction assignedFaction = Random.value < 0.5f ? Faction.Attacker : Faction.Defender;
-            Debug.Log($"MatchBootstrapper: recovery launch, player faction = {assignedFaction}.");
-
-            if (assignedFaction == Faction.Attacker)
-            {
-                gameManager.SelectAttackerFaction();
-            }
-            else
-            {
-                gameManager.SelectDefenderFaction();
-            }
-
+            Debug.LogError($"MatchBootstrapper: No GameManager instance was found in '{SceneManager.GetActiveScene().name}'.");
             Destroy(gameObject);
+            yield break;
         }
 
-        private static void HideRecoveredFrontEnd(GameManager gameManager)
+        Debug.Log($"MatchBootstrapper: active in '{SceneManager.GetActiveScene().name}', bypassing recovered front end.");
+
+        HideRecoveredFrontEnd(gameManager);
+
+        if (gameManager.playerGameplayUI != null)
         {
-            if (gameManager.factionSelectionUI != null)
-            {
-                gameManager.factionSelectionUI.SetActive(false);
-            }
+            gameManager.playerGameplayUI.SetActive(true);
+        }
 
-            string[] recoveredFrontEndNames =
-            {
-                "Canvas_FactionSelect",
-                "MainMenu_Container",
-                "Canvas_MainMenu"
-            };
+        // If a continuing automated batch already owns startup, do not start another match.
+        if (gameManager.enableAutoTestMode || TestDashboardOverlay.CurrentMatchNumber > 1)
+        {
+            Destroy(gameObject);
+            yield break;
+        }
 
-            foreach (string objectName in recoveredFrontEndNames)
+        Faction assignedFaction = Random.value < 0.5f ? Faction.Attacker : Faction.Defender;
+        Debug.Log($"MatchBootstrapper: recovery launch, player faction = {assignedFaction}.");
+
+        if (assignedFaction == Faction.Attacker)
+        {
+            gameManager.SelectAttackerFaction();
+        }
+        else
+        {
+            gameManager.SelectDefenderFaction();
+        }
+
+        Destroy(gameObject);
+    }
+
+    private static void HideRecoveredFrontEnd(GameManager gameManager)
+    {
+        if (gameManager.factionSelectionUI != null)
+        {
+            gameManager.factionSelectionUI.SetActive(false);
+        }
+
+        // Find by scene hierarchy, including inactive objects, and disable the known recovered
+        // front-end containers at runtime only. Nothing is deleted or saved back into the scene.
+        GameObject[] allObjects = Resources.FindObjectsOfTypeAll<GameObject>();
+        foreach (GameObject candidate in allObjects)
+        {
+            if (candidate == null || !candidate.scene.IsValid()) continue;
+            if (candidate.scene != SceneManager.GetActiveScene()) continue;
+
+            if (candidate.name == "Canvas_FactionSelect" ||
+                candidate.name == "MainMenu_Container" ||
+                candidate.name == "Canvas_MainMenu")
             {
-                GameObject candidate = GameObject.Find(objectName);
-                if (candidate != null)
-                {
-                    candidate.SetActive(false);
-                }
+                candidate.SetActive(false);
             }
         }
     }
