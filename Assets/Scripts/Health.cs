@@ -15,6 +15,7 @@ public class Health : MonoBehaviour
 
     private float spawnTime;
     private bool isDead = false;
+    private UnitCombatPresentation presentation;
 
     void Awake()
     {
@@ -22,6 +23,8 @@ public class Health : MonoBehaviour
         {
             healthSlider = GetComponentInChildren<Slider>(true);
         }
+
+        presentation = UnitCombatPresentation.Ensure(gameObject);
     }
 
     void Start()
@@ -39,6 +42,11 @@ public class Health : MonoBehaviour
         currentHealth -= damageAmount;
         currentHealth = Mathf.Clamp(currentHealth, 0f, maxHealth);
         UpdateHealthBar();
+
+        if (presentation != null)
+        {
+            presentation.PlayHitFlash();
+        }
 
         if (currentHealth <= 0f)
         {
@@ -97,6 +105,11 @@ public class Health : MonoBehaviour
                     GameManager.Instance.attackerSpawner.RespawnAssaultUnit();
                 }
             }
+        }
+
+        if (presentation != null)
+        {
+            presentation.PlayDeathShatter();
         }
 
         Destroy(gameObject);
