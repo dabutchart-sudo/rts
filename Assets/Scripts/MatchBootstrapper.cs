@@ -9,11 +9,8 @@ public static class MatchBootstrapper
     {
         Scene activeScene = SceneManager.GetActiveScene();
 
-        // Bootstrap is only a selector and intentionally has no GameManager.
         if (!activeScene.IsValid() || activeScene.name == MapSelection.BootstrapScene) return;
 
-        // Recovery safety: only start known battlefield scenes. Do not inject match state into
-        // utility/editor scenes that happen to be played directly.
         if (activeScene.name != MapSelection.OriginalMapScene &&
             activeScene.name != MapSelection.ChatGPTMapScene)
         {
@@ -38,19 +35,13 @@ public static class MatchBootstrapper
                 yield break;
             }
 
-            // Preserve the known automated-test startup path if a test is already configured.
             if (gameManager.enableAutoTestMode || TestDashboardOverlay.CurrentMatchNumber > 1)
             {
                 Destroy(gameObject);
                 yield break;
             }
 
-            // For the first recovery checkpoint we do not delete or rewrite any menu/UI scene
-            // objects. We simply bypass the obsolete faction menu at runtime.
-            if (gameManager.factionSelectionUI != null)
-            {
-                gameManager.factionSelectionUI.SetActive(false);
-            }
+            HideRecoveredFrontEnd(gameManager);
 
             if (gameManager.playerGameplayUI != null)
             {
@@ -70,6 +61,30 @@ public static class MatchBootstrapper
             }
 
             Destroy(gameObject);
+        }
+
+        private static void HideRecoveredFrontEnd(GameManager gameManager)
+        {
+            if (gameManager.factionSelectionUI != null)
+            {
+                gameManager.factionSelectionUI.SetActive(false);
+            }
+
+            string[] recoveredFrontEndNames =
+            {
+                "Canvas_FactionSelect",
+                "MainMenu_Container",
+                "Canvas_MainMenu"
+            };
+
+            foreach (string objectName in recoveredFrontEndNames)
+            {
+                GameObject candidate = GameObject.Find(objectName);
+                if (candidate != null)
+                {
+                    candidate.SetActive(false);
+                }
+            }
         }
     }
 }
