@@ -5,21 +5,22 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Architecture Pass 1: turns the validated SHARED GAMEPLAY SYSTEMS root into a reusable prefab.
-/// The source scene is not rewritten; a temporary clone is sanitised so no battlefield-specific
-/// sector/base references are baked into the prefab.
+/// Maintenance utility for deliberately rebuilding the authoritative shared gameplay prefab
+/// from an already-valid SHARED GAMEPLAY SYSTEMS root. It does not use Original Map as a donor.
+/// Map-specific sector/base references are stripped from the temporary copy before saving.
 /// </summary>
 public static class SharedGameplaySystemsPrefabBuilder
 {
-    public const string PrefabPath = "Assets/Prefabs/GameplaySystems.prefab";
+    // Kept as a compatibility alias while Architecture Pass 1 removes older editor helpers.
+    public const string PrefabPath = SharedGameplaySystemsPaths.PrefabPath;
     private const string ChatGPTScenePath = "Assets/Scenes/GreyboxBattlefield01.unity";
 
-    [MenuItem("RTS/Architecture/Create Shared Gameplay Systems Prefab")]
+    [MenuItem("RTS/Architecture/Rebuild Shared Gameplay Systems Prefab From Validated Map")]
     public static void CreatePrefab()
     {
         if (EditorApplication.isPlayingOrWillChangePlaymode)
         {
-            Debug.LogError("SHARED SYSTEMS: Exit Play mode before creating the gameplay prefab.");
+            Debug.LogError("SHARED SYSTEMS: Exit Play mode before rebuilding the gameplay prefab.");
             return;
         }
 
@@ -38,8 +39,8 @@ public static class SharedGameplaySystemsPrefabBuilder
         if (sourceRoot == null)
         {
             Debug.LogError(
-                "SHARED SYSTEMS: The validated ChatGPT Map does not currently contain a 'SHARED GAMEPLAY SYSTEMS' root. " +
-                "Run RTS > Maps > Install Gameplay Systems Into ChatGPT Map once, verify it plays correctly, then retry extraction.");
+                "SHARED SYSTEMS: No validated 'SHARED GAMEPLAY SYSTEMS' root was found. " +
+                "The authoritative GameplaySystems.prefab was not changed.");
             return;
         }
 
@@ -56,7 +57,7 @@ public static class SharedGameplaySystemsPrefabBuilder
 
         if (!success || saved == null)
         {
-            Debug.LogError("SHARED SYSTEMS: Failed to create GameplaySystems.prefab.");
+            Debug.LogError("SHARED SYSTEMS: Failed to rebuild GameplaySystems.prefab.");
             return;
         }
 
@@ -65,9 +66,8 @@ public static class SharedGameplaySystemsPrefabBuilder
         Selection.activeObject = saved;
 
         Debug.Log(
-            "SHARED SYSTEMS: Created Assets/Prefabs/GameplaySystems.prefab from the validated ChatGPT Map. " +
-            "Map-specific GameManager sector/base state was cleared. " +
-            "This prefab is now the candidate master gameplay package for all battlefields.");
+            "SHARED SYSTEMS: Rebuilt Assets/Prefabs/GameplaySystems.prefab from an already-valid shared gameplay root. " +
+            "Map-specific GameManager sector/base state was cleared before saving.");
     }
 
     private static Scene ResolveSourceScene()
@@ -87,7 +87,7 @@ public static class SharedGameplaySystemsPrefabBuilder
             return default;
         }
 
-        Debug.Log("SHARED SYSTEMS: Opened ChatGPT Map automatically as the validated extraction source.");
+        Debug.Log("SHARED SYSTEMS: Opened ChatGPT Map automatically as the validated maintenance source.");
         return chatGPTScene;
     }
 
@@ -119,8 +119,7 @@ public static class SharedGameplaySystemsPrefabBuilder
             EditorUtility.SetDirty(gameManager);
         }
 
-        // Spawner positions are deliberately not treated as authored prefab data. The map binder
-        // moves them to the active sector's bases after installation.
+        // Spawner positions are map-owned. The map binder places these at the active sector bases.
         UnitSpawner[] spawners = root.GetComponentsInChildren<UnitSpawner>(true);
         foreach (UnitSpawner spawner in spawners)
         {
