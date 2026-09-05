@@ -49,6 +49,10 @@ public static class GreyboxBattlefieldSafeBuilder
             return;
         }
 
+        // The old BATTLEBLOCKS/faction-selection UI is obsolete. Bootstrap owns map/mode
+        // selection now, so every generated ChatGPT Map should be clean by construction.
+        ObsoleteMenuCleanup.RemoveFromActiveScene();
+
         GameObject oldGeometry = GameObject.Find(GeneratedRootName);
         if (oldGeometry != null) UnityEngine.Object.DestroyImmediate(oldGeometry);
 
@@ -88,7 +92,8 @@ public static class GreyboxBattlefieldSafeBuilder
         Debug.Log(
             "CHATGPT MAP BUILD: GreyboxBattlefield01 rebuilt from the recovered gameplay template. " +
             "The Original Map was left untouched. Geometry, 3 sectors, 6 objectives, dynamic bases, " +
-            "spawn references, readability and NavMesh have been applied. Test the map before committing the generated scene.");
+            "spawn references, readability and NavMesh have been applied, and the obsolete BATTLEBLOCKS menu was removed. " +
+            "Test the map before committing the generated scene.");
     }
 
     [MenuItem("RTS/Maps/Rebuild Greybox Battlefield 01 (Complete)")]
