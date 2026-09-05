@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using System.Collections.Generic;
 
 /// <summary>
@@ -16,6 +17,10 @@ public sealed class ReconPurchasableBootstrap : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void EnsureRuntimeBootstrap()
     {
+        Scene scene = SceneManager.GetActiveScene();
+        if (!scene.IsValid()) return;
+        if (scene.name != MapSelection.OriginalMapScene && scene.name != MapSelection.ChatGPTMapScene) return;
+
         ReconPurchasableBootstrap existing = FindAnyObjectByType<ReconPurchasableBootstrap>(FindObjectsInactive.Include);
         if (existing != null) return;
 
