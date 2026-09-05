@@ -2,13 +2,14 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Map selector owned by the dedicated Bootstrap scene. No gameplay scene creates this menu,
-/// so a battle cannot start behind it.
+/// Main battlefield launcher. Each map can be started as a normal playable match or as an
+/// automated AI test. The ChatGPT Map is the current prototyping focus.
 /// </summary>
 public sealed class MapSelectionMenu : MonoBehaviour
 {
     private GUIStyle titleStyle;
     private GUIStyle subtitleStyle;
+    private GUIStyle mapTitleStyle;
     private GUIStyle buttonStyle;
     private GUIStyle smallStyle;
     private Texture2D panelTexture;
@@ -27,39 +28,52 @@ public sealed class MapSelectionMenu : MonoBehaviour
         EnsureStyles();
 
         float scale = Mathf.Clamp(Mathf.Min(Screen.width / 1100f, Screen.height / 700f), 0.75f, 1.35f);
-        float panelWidth = Mathf.Min(Screen.width - 40f, 650f * scale);
-        float panelHeight = 390f * scale;
+        float panelWidth = Mathf.Min(Screen.width - 40f, 720f * scale);
+        float panelHeight = 500f * scale;
         Rect panel = new Rect((Screen.width - panelWidth) * 0.5f, (Screen.height - panelHeight) * 0.5f, panelWidth, panelHeight);
 
         GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture, ScaleMode.StretchToFill, false, 0f, new Color(0.025f, 0.035f, 0.045f, 1f), 0f, 0f);
         GUI.Box(panel, GUIContent.none, new GUIStyle { normal = { background = panelTexture } });
 
-        GUILayout.BeginArea(new Rect(panel.x + 34f * scale, panel.y + 28f * scale, panel.width - 68f * scale, panel.height - 56f * scale));
+        GUILayout.BeginArea(new Rect(panel.x + 34f * scale, panel.y + 24f * scale, panel.width - 68f * scale, panel.height - 48f * scale));
         GUILayout.Label("SELECT BATTLEFIELD", titleStyle);
-        GUILayout.Space(4f * scale);
-        GUILayout.Label("Choose the battlefield for this match.", subtitleStyle);
-        GUILayout.Space(28f * scale);
+        GUILayout.Space(2f * scale);
+        GUILayout.Label("Choose a map, then play it normally or run an automated AI test.", subtitleStyle);
+        GUILayout.Space(20f * scale);
 
-        if (GUILayout.Button("DEVELOPMENT BATTLEFIELD\n<size=70%>Recovered original development map</size>", buttonStyle, GUILayout.Height(92f * scale)))
-        {
-            Launch(MapSelection.DevelopmentTestScene);
-        }
-
-        GUILayout.Space(14f * scale);
-
-        if (GUILayout.Button("GREYBOX BATTLEFIELD 01\n<size=70%>Three sectors • six objectives</size>", buttonStyle, GUILayout.Height(92f * scale)))
-        {
-            Launch(MapSelection.GreyboxBattlefieldScene);
-        }
+        DrawMap("ORIGINAL MAP", "Your recovered original battlefield", MapSelection.OriginalMapScene, scale);
+        GUILayout.Space(18f * scale);
+        DrawMap("CHATGPT MAP", "Current prototyping map • three sectors • six objectives", MapSelection.ChatGPTMapScene, scale);
 
         GUILayout.FlexibleSpace();
-        GUILayout.Label("Last selected: " + MapSelection.GetSelectedDisplayName(), smallStyle);
+        GUILayout.Label("Prototype focus: ChatGPT Map", smallStyle);
         GUILayout.EndArea();
     }
 
-    private void Launch(string sceneName)
+    private void DrawMap(string title, string description, string sceneName, float scale)
     {
-        MapSelection.SelectedSceneName = sceneName;
+        GUILayout.Label(title, mapTitleStyle);
+        GUILayout.Label(description, subtitleStyle);
+        GUILayout.Space(7f * scale);
+
+        GUILayout.BeginHorizontal();
+        if (GUILayout.Button("PLAY", buttonStyle, GUILayout.Height(48f * scale)))
+        {
+            Launch(sceneName, MapLaunchMode.Play);
+        }
+
+        GUILayout.Space(12f * scale);
+
+        if (GUILayout.Button("AUTO TEST", buttonStyle, GUILayout.Height(48f * scale)))
+        {
+            Launch(sceneName, MapLaunchMode.Test);
+        }
+        GUILayout.EndHorizontal();
+    }
+
+    private void Launch(string sceneName, MapLaunchMode launchMode)
+    {
+        MapSelection.ConfigureLaunch(sceneName, launchMode);
 
         if (!Application.CanStreamedLevelBeLoaded(sceneName))
         {
@@ -94,13 +108,19 @@ public sealed class MapSelectionMenu : MonoBehaviour
             normal = { textColor = new Color(0.72f, 0.78f, 0.82f) }
         };
 
+        mapTitleStyle = new GUIStyle(GUI.skin.label)
+        {
+            alignment = TextAnchor.MiddleCenter,
+            fontSize = 19,
+            fontStyle = FontStyle.Bold,
+            normal = { textColor = Color.white }
+        };
+
         buttonStyle = new GUIStyle(GUI.skin.button)
         {
             alignment = TextAnchor.MiddleCenter,
-            fontSize = 18,
+            fontSize = 16,
             fontStyle = FontStyle.Bold,
-            richText = true,
-            wordWrap = true,
             normal = { background = buttonTexture, textColor = Color.white },
             hover = { background = buttonHoverTexture, textColor = Color.white },
             active = { background = buttonHoverTexture, textColor = Color.white }
