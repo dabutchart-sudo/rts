@@ -61,7 +61,6 @@ public class UnitSpawner : MonoBehaviour
         int before = GetAliveAssaultCount();
         int missing = Mathf.Max(0, cap - before);
 
-        // Defenders have unlimited reinforcements. Attackers fund replacements from tickets.
         bool spendTickets = !isDefenderSpawner;
         int spawned = SpawnAssaultsUpToLimit(missing, spendTickets);
 
@@ -200,6 +199,12 @@ public class UnitSpawner : MonoBehaviour
 
         UnitCategoryIdentity.Ensure(spawnedUnit, UnitCategory.Infantry);
         UnitClassIdentity.Ensure(spawnedUnit, UnitClass.Assault);
+
+        UnitCombatPresentation presentation = UnitCombatPresentation.Ensure(spawnedUnit);
+        if (presentation != null)
+        {
+            presentation.PlaySpawnDrop();
+        }
 
         SquadManager squadManager = SquadManager.EnsureInstance();
         if (squadManager != null)
