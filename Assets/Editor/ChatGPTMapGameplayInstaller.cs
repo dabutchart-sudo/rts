@@ -10,6 +10,11 @@ using UnityEngine.SceneManagement;
 /// Installs the known-good gameplay systems from the recovered Original Map into the ChatGPT Map
 /// without modifying or saving the Original Map. The copied GameManager is then rebound to the
 /// ChatGPT Map's own sectors/objectives/bases by the existing greybox wiring pass.
+///
+/// Recovery rule: the donor scene owns shared presentation/runtime infrastructure. ChatGPT Map
+/// owns battlefield content. This installer therefore copies the complete gameplay UI family
+/// while explicitly excluding the obsolete BATTLEBLOCKS front end, then removes duplicate
+/// cameras/listeners/EventSystems from the target scene.
 /// </summary>
 public static class ChatGPTMapGameplayInstaller
 {
@@ -75,6 +80,10 @@ public static class ChatGPTMapGameplayInstaller
 
         EditorUtility.SetDirty(copiedGameManager);
 
+        // The donor root is now authoritative for runtime presentation/input. Remove only
+        // duplicate target-scene infrastructure; map geometry and map-owned world objects remain.
+        DeduplicatePresentationInfrastructure(chatGPT, exportRoot);
+
         // Reuse the already-tested greybox binder to provide map-specific objectives, bases,
         // sectors, spawner positions and navigation.
         GreyboxBattlefieldGameplayWiring.WireForPlay();
@@ -94,7 +103,9 @@ public static class ChatGPTMapGameplayInstaller
 
         Debug.Log(
             "CHATGPT MAP INSTALL: Gameplay systems copied from the known-good Original Map and " +
-            "rebound to ChatGPT Map. Original Map was not saved or modified. Test Bootstrap > ChatGPT Map before committing the regenerated scene.");
+            "rebound to ChatGPT Map. Complete gameplay canvases copied; obsolete BATTLEBLOCKS UI excluded; " +
+            "duplicate EventSystems/cameras/audio listeners removed. Original Map was not saved or modified. " +
+            "Test Bootstrap > ChatGPT Map before committing the regenerated scene.");
     }
 
     private static GameObject BuildCopiedSystemsRoot(GameManager gameManager, Scene sourceScene)
@@ -109,20 +120,33 @@ public static class ChatGPTMapGameplayInstaller
         AddCandidate(candidates, gameManager.playerGameplayUI);
         AddCandidate(candidates, gameManager.enemyDirector != null ? gameManager.enemyDirector.gameObject : null);
 
-        AddAllOfType<UIManager>(candidates);
-        AddAllOfType<SelectionManager>(candidates);
-        AddAllOfType<AICommander>(candidates);
-        AddAllOfType<SquadManager>(candidates);
-        AddAllOfType<RTSCamera>(candidates);
-        AddAllOfType<EventSystem>(candidates);
-        AddAllOfType<TestDashboardOverlay>(candidates);
+        AddAllOfType<UIManager>(candidates, sourceScene);
+        AddAllOfType<SelectionManager>(candidates, sourceScene);
+        AddAllOfType<AICommander>(candidates, sourceScene);
+        AddAllOfType<SquadManager>(candidates, sourceScene);
+        AddAllOfType<RTSCamera>(candidates, sourceScene);
+        AddAllOfType<EventSystem>(candidates, sourceScene);
+        AddAllOfType<TestDashboardOverlay>(candidates, sourceScene);
+
+        // Copy every gameplay canvas family from the known-good donor rather than only the one
+        // referenced directly by GameManager. This restores sidebars/store/control presentation
+        // that lives in sibling canvases, while filtering the obsolete recovered front end.
+        Canvas[] canvases = Object.FindObjectsByType<Canvas>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        foreach (Canvas canvas in canvases)
+        {
+            if (canvas == null || canvas.gameObject.scene != sourceScene) continue;
+            if (IsObsoleteFrontEnd(canvas.transform)) continue;
+
+            AddCandidate(candidates, GetTopmostSceneObject(canvas.gameObject, sourceScene));
+        }
 
         Camera mainCamera = Camera.main;
         if (mainCamera != null && mainCamera.gameObject.scene == sourceScene)
         {
-            AddCandidate(candidates, mainCamera.gameObject);
+            AddCandidate(candidates, GetTopmostSceneObject(mainCamera.gameObject, sourceScene));
         }
 
+        RemoveObsoleteFrontEndCandidates(candidates);
         RemoveNestedCandidates(candidates);
 
         Dictionary<Object, Object> remap = new Dictionary<Object, Object>();
@@ -137,6 +161,7 @@ public static class ChatGPTMapGameplayInstaller
         }
 
         RemapCopiedReferences(exportRoot, remap);
+        RemoveObsoleteFrontEndFromCopy(exportRoot);
         return exportRoot;
     }
 
@@ -145,13 +170,60 @@ public static class ChatGPTMapGameplayInstaller
         if (candidate != null) set.Add(candidate);
     }
 
-    private static void AddAllOfType<T>(HashSet<GameObject> set) where T : Component
+    private static void AddAllOfType<T>(HashSet<GameObject> set, Scene sourceScene) where T : Component
     {
         T[] items = Object.FindObjectsByType<T>(FindObjectsInactive.Include, FindObjectsSortMode.None);
         foreach (T item in items)
         {
-            if (item != null) set.Add(item.gameObject);
+            if (item == null || item.gameObject.scene != sourceScene) continue;
+            if (IsObsoleteFrontEnd(item.transform)) continue;
+            set.Add(GetTopmostSceneObject(item.gameObject, sourceScene));
         }
+    }
+
+    private static GameObject GetTopmostSceneObject(GameObject gameObject, Scene scene)
+    {
+        if (gameObject == null) return null;
+
+        Transform current = gameObject.transform;
+        while (current.parent != null && current.parent.gameObject.scene == scene)
+        {
+            current = current.parent;
+        }
+
+        return current.gameObject;
+    }
+
+    private static bool IsObsoleteFrontEnd(Transform item)
+    {
+        Transform current = item;
+        while (current != null)
+        {
+            if (current.name == "Canvas_FactionSelect" ||
+                current.name == "MainMenu_Container" ||
+                current.name == "Canvas_MainMenu")
+            {
+                return true;
+            }
+
+            current = current.parent;
+        }
+
+        return false;
+    }
+
+    private static void RemoveObsoleteFrontEndCandidates(HashSet<GameObject> candidates)
+    {
+        List<GameObject> remove = new List<GameObject>();
+        foreach (GameObject candidate in candidates)
+        {
+            if (candidate != null && IsObsoleteFrontEnd(candidate.transform))
+            {
+                remove.Add(candidate);
+            }
+        }
+
+        foreach (GameObject item in remove) candidates.Remove(item);
     }
 
     private static void RemoveNestedCandidates(HashSet<GameObject> set)
@@ -223,6 +295,59 @@ public static class ChatGPTMapGameplayInstaller
             }
 
             serialized.ApplyModifiedPropertiesWithoutUndo();
+        }
+    }
+
+    private static void RemoveObsoleteFrontEndFromCopy(GameObject exportRoot)
+    {
+        Transform[] transforms = exportRoot.GetComponentsInChildren<Transform>(true);
+        List<GameObject> remove = new List<GameObject>();
+
+        foreach (Transform item in transforms)
+        {
+            if (item == null || item == exportRoot.transform) continue;
+            if (item.name == "Canvas_FactionSelect" ||
+                item.name == "MainMenu_Container" ||
+                item.name == "Canvas_MainMenu")
+            {
+                remove.Add(item.gameObject);
+            }
+        }
+
+        foreach (GameObject item in remove)
+        {
+            if (item != null) Object.DestroyImmediate(item);
+        }
+    }
+
+    private static void DeduplicatePresentationInfrastructure(Scene targetScene, GameObject authoritativeRoot)
+    {
+        EventSystem[] eventSystems = Object.FindObjectsByType<EventSystem>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        foreach (EventSystem eventSystem in eventSystems)
+        {
+            if (eventSystem == null || eventSystem.gameObject.scene != targetScene) continue;
+            if (eventSystem.transform == authoritativeRoot.transform || eventSystem.transform.IsChildOf(authoritativeRoot.transform)) continue;
+
+            Object.DestroyImmediate(eventSystem.gameObject);
+        }
+
+        AudioListener[] listeners = Object.FindObjectsByType<AudioListener>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        foreach (AudioListener listener in listeners)
+        {
+            if (listener == null || listener.gameObject.scene != targetScene) continue;
+            if (listener.transform == authoritativeRoot.transform || listener.transform.IsChildOf(authoritativeRoot.transform)) continue;
+
+            Object.DestroyImmediate(listener);
+        }
+
+        Camera[] cameras = Object.FindObjectsByType<Camera>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        foreach (Camera camera in cameras)
+        {
+            if (camera == null || camera.gameObject.scene != targetScene) continue;
+            if (camera.transform == authoritativeRoot.transform || camera.transform.IsChildOf(authoritativeRoot.transform)) continue;
+
+            camera.enabled = false;
+            EditorUtility.SetDirty(camera);
         }
     }
 
