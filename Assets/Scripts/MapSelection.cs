@@ -2,14 +2,15 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Persistent map-selection state. The current project has one gameplay scene, but this
-/// deliberately uses scene names so additional authored maps can be added without changing
-/// the match systems. A future procedural generator can also register/select a generated map.
+/// Shared map-selection state. The bootstrap scene chooses a battlefield, then the selected
+/// gameplay scene is loaded normally. Gameplay scenes do not create or own the map menu.
 /// </summary>
 public static class MapSelection
 {
     private const string SelectedMapKey = "RTS_SelectedMapScene";
-    public const string DevelopmentTestScene = "SampleScene";
+
+    public const string BootstrapScene = "Bootstrap";
+    public const string DevelopmentTestScene = "RecoveredDevelopmentMap";
     public const string GreyboxBattlefieldScene = "GreyboxBattlefield01";
 
     public static string SelectedSceneName
@@ -50,6 +51,6 @@ public static class MapSelection
     {
         return SelectedSceneName == GreyboxBattlefieldScene
             ? "Greybox Battlefield 01"
-            : "Development Test Map";
+            : "Development Battlefield";
     }
 }
