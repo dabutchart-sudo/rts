@@ -6,8 +6,8 @@ using System.Collections;
 using System.Collections.Generic;
 
 /// <summary>
-/// Shared gameplay HUD. This object is intentionally map-independent and survives scene loads,
-/// so every battlefield uses the same HUD instance and layout.
+/// Shared gameplay HUD used by every battlefield through the shared gameplay systems prefab.
+/// A fresh HUD instance is created with each battlefield scene.
 /// </summary>
 public class UIManager : MonoBehaviour
 {
@@ -31,7 +31,6 @@ public class UIManager : MonoBehaviour
         }
 
         Instance = this;
-        DontDestroyOnLoad(gameObject);
         SceneManager.sceneLoaded += OnSceneLoaded;
     }
 
