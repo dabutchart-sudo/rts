@@ -5,8 +5,8 @@ using UnityEngine.SceneManagement;
 /// <summary>
 /// Recovery-safe battlefield selector. It exists only in the dedicated Bootstrap scene and
 /// deliberately does not alter, clean, initialise or otherwise touch either gameplay scene.
-/// For the recovery checkpoint, startup is driven explicitly from this persistent selector
-/// rather than relying on RuntimeInitializeOnLoadMethod firing again after SceneManager.LoadScene.
+/// Runtime systems that normally initialise on the first scene load are explicitly restored
+/// after the selected battlefield loads.
 /// </summary>
 public sealed class MapSelectionMenu : MonoBehaviour
 {
@@ -111,9 +111,6 @@ public sealed class MapSelectionMenu : MonoBehaviour
 
         SceneManager.sceneLoaded -= HandleBattlefieldLoaded;
 
-        // Awake has completed by the time sceneLoaded fires, so the GameManager is available.
-        // Hide the recovered front end immediately, before the newly loaded scene can render a
-        // frame. Match startup itself still waits one frame so the rest of Start() can settle.
         GameManager gameManager = GameManager.Instance;
         if (gameManager != null)
         {
@@ -137,14 +134,14 @@ public sealed class MapSelectionMenu : MonoBehaviour
 
         Debug.Log($"MAP SELECT: '{scene.name}' loaded. Starting recovered gameplay.");
 
-        // Repeat defensively in case any recovered Start() method re-enabled the old UI during
-        // the first frame. This remains runtime-only and is never saved into the scene asset.
         HideRecoveredFrontEnd(scene, gameManager);
 
         if (gameManager.playerGameplayUI != null)
         {
             gameManager.playerGameplayUI.SetActive(true);
         }
+
+        EnsureBattlefieldRuntimeSystems();
 
         if (!gameManager.enableAutoTestMode && TestDashboardOverlay.CurrentMatchNumber <= 1)
         {
@@ -162,6 +159,38 @@ public sealed class MapSelectionMenu : MonoBehaviour
         }
 
         Destroy(gameObject);
+    }
+
+    /// <summary>
+    /// RuntimeInitializeOnLoadMethod is reliable for the initial Bootstrap scene but the
+    /// project's runtime-created battlefield helpers do not get another initialisation pass
+    /// after SceneManager.LoadScene. Explicitly ensure the normal gameplay services here.
+    /// </summary>
+    private static void EnsureBattlefieldRuntimeSystems()
+    {
+        EnsureComponent<ControlModeManager>("ControlModeManager");
+        EnsureComponent<ControlModeHUD>("ControlModeHUD");
+
+        SpecialistDeploymentTracker.EnsureInstance();
+        EnsureComponent<EngineerPurchasableBootstrap>("EngineerPurchasableBootstrap");
+        EnsureComponent<ReconPurchasableBootstrap>("ReconPurchasableBootstrap");
+        EnsureComponent<SupportPurchasableBootstrap>("SupportPurchasableBootstrap");
+        EnsureComponent<SpecialistAbilityBootstrap>("SpecialistAbilityBootstrap");
+
+        // The diagnostic panel and its objective-route lines were part of the normal prototype
+        // observation experience. Start them visible; G still toggles the panel at runtime.
+        SquadAIDebugOverlay.EnsureInstance(true);
+
+        Debug.Log("MAP SELECT: battlefield runtime HUD, control modes, specialist services and diagnostics restored.");
+    }
+
+    private static T EnsureComponent<T>(string objectName) where T : Component
+    {
+        T existing = FindAnyObjectByType<T>(FindObjectsInactive.Include);
+        if (existing != null) return existing;
+
+        GameObject host = new GameObject(objectName);
+        return host.AddComponent<T>();
     }
 
     private static void HideRecoveredFrontEnd(Scene scene, GameManager gameManager)
