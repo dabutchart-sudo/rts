@@ -2,6 +2,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem.UI;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 public class ControlModeHUD : MonoBehaviour
@@ -20,6 +21,9 @@ public class ControlModeHUD : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void CreateHUD()
     {
+        Scene scene = SceneManager.GetActiveScene();
+        if (!scene.IsValid()) return;
+        if (scene.name != MapSelection.OriginalMapScene && scene.name != MapSelection.ChatGPTMapScene) return;
         if (FindAnyObjectByType<ControlModeHUD>(FindObjectsInactive.Include) != null) return;
 
         GameObject host = new GameObject("ControlModeHUD");
@@ -91,7 +95,7 @@ public class ControlModeHUD : MonoBehaviour
 
         if (gameplayCanvas == null)
         {
-            Debug.LogWarning("ControlModeHUD: Canvas_Gameplay was not found.");
+            Debug.LogWarning("ControlModeHUD: Canvas_Gameplay was not found in the battlefield scene.");
             return;
         }
 
