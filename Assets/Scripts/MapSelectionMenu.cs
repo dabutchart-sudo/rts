@@ -2,16 +2,11 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Lightweight, map-independent launcher shown once when Play starts.
-/// It deliberately lives in code rather than inside a battlefield scene so maps contain
-/// world data only. The same launcher works whether Play is pressed from SampleScene or
-/// an authored battlefield.
+/// Map selector owned by the dedicated Bootstrap scene. No gameplay scene creates this menu,
+/// so a battle cannot start behind it.
 /// </summary>
 public sealed class MapSelectionMenu : MonoBehaviour
 {
-    private static bool selectionMadeThisSession;
-    private static MapSelectionMenu instance;
-
     private GUIStyle titleStyle;
     private GUIStyle subtitleStyle;
     private GUIStyle buttonStyle;
@@ -20,31 +15,8 @@ public sealed class MapSelectionMenu : MonoBehaviour
     private Texture2D buttonTexture;
     private Texture2D buttonHoverTexture;
 
-    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-    private static void CreateOnFirstSceneLoad()
-    {
-        if (selectionMadeThisSession || instance != null) return;
-
-        GameObject root = new GameObject("Map Selection Menu");
-        instance = root.AddComponent<MapSelectionMenu>();
-        DontDestroyOnLoad(root);
-    }
-
-    private void Awake()
-    {
-        if (instance != null && instance != this)
-        {
-            Destroy(gameObject);
-            return;
-        }
-
-        instance = this;
-        DontDestroyOnLoad(gameObject);
-    }
-
     private void OnDestroy()
     {
-        if (instance == this) instance = null;
         DestroyTexture(panelTexture);
         DestroyTexture(buttonTexture);
         DestroyTexture(buttonHoverTexture);
@@ -59,16 +31,16 @@ public sealed class MapSelectionMenu : MonoBehaviour
         float panelHeight = 390f * scale;
         Rect panel = new Rect((Screen.width - panelWidth) * 0.5f, (Screen.height - panelHeight) * 0.5f, panelWidth, panelHeight);
 
-        GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture, ScaleMode.StretchToFill, false, 0f, new Color(0.025f, 0.035f, 0.045f, 0.94f), 0f, 0f);
+        GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), Texture2D.whiteTexture, ScaleMode.StretchToFill, false, 0f, new Color(0.025f, 0.035f, 0.045f, 1f), 0f, 0f);
         GUI.Box(panel, GUIContent.none, new GUIStyle { normal = { background = panelTexture } });
 
         GUILayout.BeginArea(new Rect(panel.x + 34f * scale, panel.y + 28f * scale, panel.width - 68f * scale, panel.height - 56f * scale));
         GUILayout.Label("SELECT BATTLEFIELD", titleStyle);
         GUILayout.Space(4f * scale);
-        GUILayout.Label("Choose the map for this match. Gameplay systems and HUD are shared between battlefields.", subtitleStyle);
+        GUILayout.Label("Choose the battlefield for this match.", subtitleStyle);
         GUILayout.Space(28f * scale);
 
-        if (GUILayout.Button("DEVELOPMENT TEST MAP\n<size=70%>Original development battlefield</size>", buttonStyle, GUILayout.Height(92f * scale)))
+        if (GUILayout.Button("DEVELOPMENT BATTLEFIELD\n<size=70%>Recovered original development map</size>", buttonStyle, GUILayout.Height(92f * scale)))
         {
             Launch(MapSelection.DevelopmentTestScene);
         }
@@ -81,7 +53,7 @@ public sealed class MapSelectionMenu : MonoBehaviour
         }
 
         GUILayout.FlexibleSpace();
-        GUILayout.Label("Current: " + MapSelection.GetSelectedDisplayName(), smallStyle);
+        GUILayout.Label("Last selected: " + MapSelection.GetSelectedDisplayName(), smallStyle);
         GUILayout.EndArea();
     }
 
@@ -91,13 +63,11 @@ public sealed class MapSelectionMenu : MonoBehaviour
 
         if (!Application.CanStreamedLevelBeLoaded(sceneName))
         {
-            Debug.LogError($"MAP SELECT: Scene '{sceneName}' is not available. Use RTS > Maps > Ensure Gameplay Scenes In Build Settings.");
+            Debug.LogError($"MAP SELECT: Scene '{sceneName}' is not available. Use RTS > Maps > Configure Map Selection Build Settings.");
             return;
         }
 
-        selectionMadeThisSession = true;
         SceneManager.LoadScene(sceneName);
-        Destroy(gameObject);
     }
 
     private void EnsureStyles()
