@@ -2,16 +2,11 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Lightweight, map-independent launcher shown once when Play starts.
-/// It deliberately lives in code rather than inside a battlefield scene so maps contain
-/// world data only. The same launcher works whether Play is pressed from SampleScene or
-/// an authored battlefield.
+/// Recovery-safe battlefield selector. It exists only in the dedicated Bootstrap scene and
+/// deliberately does not alter, clean, initialise or otherwise touch either gameplay scene.
 /// </summary>
 public sealed class MapSelectionMenu : MonoBehaviour
 {
-    private static bool selectionMadeThisSession;
-    private static MapSelectionMenu instance;
-
     private GUIStyle titleStyle;
     private GUIStyle subtitleStyle;
     private GUIStyle buttonStyle;
@@ -21,30 +16,17 @@ public sealed class MapSelectionMenu : MonoBehaviour
     private Texture2D buttonHoverTexture;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-    private static void CreateOnFirstSceneLoad()
+    private static void CreateInBootstrapOnly()
     {
-        if (selectionMadeThisSession || instance != null) return;
+        Scene activeScene = SceneManager.GetActiveScene();
+        if (!activeScene.IsValid() || activeScene.name != MapSelection.BootstrapScene) return;
+        if (FindAnyObjectByType<MapSelectionMenu>() != null) return;
 
-        GameObject root = new GameObject("Map Selection Menu");
-        instance = root.AddComponent<MapSelectionMenu>();
-        DontDestroyOnLoad(root);
-    }
-
-    private void Awake()
-    {
-        if (instance != null && instance != this)
-        {
-            Destroy(gameObject);
-            return;
-        }
-
-        instance = this;
-        DontDestroyOnLoad(gameObject);
+        new GameObject("Map Selection Menu").AddComponent<MapSelectionMenu>();
     }
 
     private void OnDestroy()
     {
-        if (instance == this) instance = null;
         DestroyTexture(panelTexture);
         DestroyTexture(buttonTexture);
         DestroyTexture(buttonHoverTexture);
@@ -65,39 +47,32 @@ public sealed class MapSelectionMenu : MonoBehaviour
         GUILayout.BeginArea(new Rect(panel.x + 34f * scale, panel.y + 28f * scale, panel.width - 68f * scale, panel.height - 56f * scale));
         GUILayout.Label("SELECT BATTLEFIELD", titleStyle);
         GUILayout.Space(4f * scale);
-        GUILayout.Label("Choose the map for this match. Gameplay systems and HUD are shared between battlefields.", subtitleStyle);
+        GUILayout.Label("Recovery build: choose a battlefield. The selected scene then uses its own known gameplay startup.", subtitleStyle);
         GUILayout.Space(28f * scale);
 
-        if (GUILayout.Button("DEVELOPMENT TEST MAP\n<size=70%>Original development battlefield</size>", buttonStyle, GUILayout.Height(92f * scale)))
+        if (GUILayout.Button("ORIGINAL MAP\n<size=70%>Recovered development battlefield</size>", buttonStyle, GUILayout.Height(92f * scale)))
         {
-            Launch(MapSelection.DevelopmentTestScene);
+            Launch(MapSelection.OriginalMapScene);
         }
 
         GUILayout.Space(14f * scale);
 
-        if (GUILayout.Button("GREYBOX BATTLEFIELD 01\n<size=70%>Three sectors • six objectives</size>", buttonStyle, GUILayout.Height(92f * scale)))
+        if (GUILayout.Button("CHATGPT MAP\n<size=70%>Greybox prototype battlefield</size>", buttonStyle, GUILayout.Height(92f * scale)))
         {
-            Launch(MapSelection.GreyboxBattlefieldScene);
+            Launch(MapSelection.ChatGPTMapScene);
         }
 
         GUILayout.FlexibleSpace();
-        GUILayout.Label("Current: " + MapSelection.GetSelectedDisplayName(), smallStyle);
+        GUILayout.Label("First checkpoint: verify Original Map gameplay before changing either scene.", smallStyle);
         GUILayout.EndArea();
     }
 
     private void Launch(string sceneName)
     {
-        MapSelection.SelectedSceneName = sceneName;
-
-        if (!Application.CanStreamedLevelBeLoaded(sceneName))
+        if (MapSelection.TryLoad(sceneName))
         {
-            Debug.LogError($"MAP SELECT: Scene '{sceneName}' is not available. Use RTS > Maps > Ensure Gameplay Scenes In Build Settings.");
-            return;
+            Destroy(gameObject);
         }
-
-        selectionMadeThisSession = true;
-        SceneManager.LoadScene(sceneName);
-        Destroy(gameObject);
     }
 
     private void EnsureStyles()
@@ -140,6 +115,7 @@ public sealed class MapSelectionMenu : MonoBehaviour
         {
             alignment = TextAnchor.MiddleCenter,
             fontSize = 12,
+            wordWrap = true,
             normal = { textColor = new Color(0.55f, 0.62f, 0.67f) }
         };
     }
