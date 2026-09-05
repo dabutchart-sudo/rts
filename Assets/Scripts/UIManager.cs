@@ -80,39 +80,47 @@ public class UIManager : MonoBehaviour
         if (xpText != null) return;
         if (ticketText == null) return;
 
-        Transform parent = ticketText.transform.parent;
-        if (parent == null) return;
+        Canvas gameplayCanvas = ticketText.GetComponentInParent<Canvas>();
+        if (gameplayCanvas == null) return;
 
-        Transform existing = parent.Find("XPText_Runtime");
+        Transform existing = gameplayCanvas.transform.Find("XPText_Runtime");
         if (existing != null)
         {
             xpText = existing.GetComponent<TextMeshProUGUI>();
-            if (xpText != null) return;
+            if (xpText != null)
+            {
+                xpText.gameObject.SetActive(true);
+                xpText.transform.SetAsLastSibling();
+                return;
+            }
         }
 
+        // Keep XP directly on the gameplay Canvas rather than under the Tickets label's parent.
+        // Some recovered HUD containers are tightly sized/masked; parenting XP there can make the
+        // text exist correctly but be completely clipped from view.
         GameObject xpObject = new GameObject("XPText_Runtime", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
-        xpObject.transform.SetParent(parent, false);
+        xpObject.transform.SetParent(gameplayCanvas.transform, false);
+        xpObject.transform.SetAsLastSibling();
 
-        RectTransform ticketRect = ticketText.rectTransform;
         RectTransform xpRect = xpObject.GetComponent<RectTransform>();
-
-        // Match the ticket label's anchoring, but place XP directly beneath it so the
-        // existing Tickets field can remain a compact single-line element.
-        xpRect.anchorMin = ticketRect.anchorMin;
-        xpRect.anchorMax = ticketRect.anchorMax;
-        xpRect.pivot = ticketRect.pivot;
-        xpRect.anchoredPosition = ticketRect.anchoredPosition + new Vector2(0f, -24f);
-        xpRect.sizeDelta = new Vector2(Mathf.Max(ticketRect.sizeDelta.x, 220f), 48f);
+        xpRect.anchorMin = new Vector2(0f, 1f);
+        xpRect.anchorMax = new Vector2(0f, 1f);
+        xpRect.pivot = new Vector2(0f, 1f);
+        xpRect.anchoredPosition = new Vector2(12f, -38f);
+        xpRect.sizeDelta = new Vector2(300f, 56f);
 
         xpText = xpObject.GetComponent<TextMeshProUGUI>();
         xpText.font = ticketText.font;
-        xpText.fontSize = Mathf.Max(12f, ticketText.fontSize * 0.9f);
+        xpText.fontSize = Mathf.Max(14f, ticketText.fontSize * 0.9f);
         xpText.fontStyle = FontStyles.Normal;
         xpText.color = ticketText.color;
-        xpText.alignment = ticketText.alignment;
+        xpText.alignment = TextAlignmentOptions.TopLeft;
         xpText.enableWordWrapping = false;
+        xpText.overflowMode = TextOverflowModes.Overflow;
         xpText.raycastTarget = false;
         xpText.text = string.Empty;
+
+        Debug.Log($"UIManager: XP HUD created on canvas '{gameplayCanvas.name}'.");
     }
 
     private void RefreshHUD()
