@@ -48,12 +48,12 @@ public class UIManager : MonoBehaviour
             gameOverText.gameObject.SetActive(false);
         }
 
-        RefreshTickets();
+        RefreshStatusBlock();
     }
 
     void Update()
     {
-        RefreshTickets();
+        RefreshStatusBlock();
     }
 
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
@@ -67,25 +67,49 @@ public class UIManager : MonoBehaviour
             gameOverText.gameObject.SetActive(false);
         }
 
-        RefreshTickets();
+        RefreshStatusBlock();
     }
 
-    private void RefreshTickets()
+    private void RefreshStatusBlock()
     {
         if (ticketText == null || GameManager.Instance == null) return;
-        ticketText.text = $"Tickets: {Mathf.Max(0, GameManager.Instance.attackerTickets)}";
+
+        GameManager gameManager = GameManager.Instance;
+        string text = $"Tickets: {Mathf.Max(0, gameManager.attackerTickets)}";
+
+        // During development we deliberately expose both teams' XP for tuning and observation.
+        // In a non-development player build, only the local player's team XP is shown.
+        if (Application.isEditor || Debug.isDebugBuild)
+        {
+            text += $"\nAttacker XP: {Mathf.Max(0, gameManager.attackerXP)}";
+            text += $"\nDefender XP: {Mathf.Max(0, gameManager.defenderXP)}";
+        }
+        else
+        {
+            switch (gameManager.playerFaction)
+            {
+                case Faction.Attacker:
+                    text += $"\nTeam XP: {Mathf.Max(0, gameManager.attackerXP)}";
+                    break;
+
+                case Faction.Defender:
+                    text += $"\nTeam XP: {Mathf.Max(0, gameManager.defenderXP)}";
+                    break;
+            }
+        }
+
+        ticketText.text = text;
     }
 
     public void UpdateTickets(int tickets)
     {
-        if (ticketText != null)
-        {
-            ticketText.text = $"Tickets: {Mathf.Max(0, tickets)}";
-        }
+        RefreshStatusBlock();
     }
 
-    // XP remains available to gameplay/debug systems, but is intentionally not part of the normal HUD.
-    public void UpdateXP(int currentXP) { }
+    public void UpdateXP(int currentXP)
+    {
+        RefreshStatusBlock();
+    }
 
     public void UpdateCaptureStatus(string capturePointName, float progress, int attackers, int defenders)
     {
