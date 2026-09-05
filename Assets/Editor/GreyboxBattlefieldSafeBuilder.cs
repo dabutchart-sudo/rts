@@ -7,19 +7,22 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Reproducible build pipeline for Greybox Battlefield 01.
-/// The finished map scene is generated from the clean SampleScene baseline, then gameplay
-/// wiring, readability cleanup and serialized-reference repair are applied before saving.
-/// This keeps the authored map reproducible while still allowing the generated .unity scene
-/// itself to be committed to source control as a normal project asset.
+/// Reproducible build pipeline for the ChatGPT Map (GreyboxBattlefield01).
+///
+/// IMPORTANT: the recovered Original Map is now the gameplay-system template. The ChatGPT Map
+/// is created as a COPY of that known-rich scene, then only its battlefield geometry/objectives/
+/// bases/navigation are replaced. This prevents the greybox from inheriting the ancient,
+/// incomplete SampleScene gameplay wiring.
+///
+/// The Original Map itself is never modified by this builder.
 /// </summary>
 public static class GreyboxBattlefieldSafeBuilder
 {
-    private const string SourceScene = "Assets/Scenes/SampleScene.unity";
+    private const string SourceScene = "Assets/Scenes/RecoveredDevelopmentMap.unity";
     private const string TargetScene = "Assets/Scenes/GreyboxBattlefield01.unity";
     private const string GeneratedRootName = "GreyboxBattlefield01_Generated";
 
-    [MenuItem("RTS/Maps/Rebuild Greybox Battlefield 01 (Complete)")]
+    [MenuItem("RTS/Maps/Rebuild ChatGPT Map (Complete)")]
     public static void RebuildComplete()
     {
         if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
@@ -27,24 +30,22 @@ public static class GreyboxBattlefieldSafeBuilder
         Scene source = EditorSceneManager.OpenScene(SourceScene, OpenSceneMode.Single);
         if (!source.IsValid())
         {
-            Debug.LogError("COMPLETE MAP BUILD: Could not open SampleScene.");
+            Debug.LogError("CHATGPT MAP BUILD: Could not open the recovered Original Map.");
             return;
         }
 
-        RemoveAccidentalGeneratedMapFromSource(source);
-        EditorSceneManager.SaveScene(source);
-
-        // saveAsCopy=false is deliberate: the active scene becomes GreyboxBattlefield01.
-        if (!EditorSceneManager.SaveScene(source, TargetScene, false))
+        // saveAsCopy=true is deliberate. RecoveredDevelopmentMap is our preserved source and
+        // must not become or be modified as the ChatGPT Map.
+        if (!EditorSceneManager.SaveScene(source, TargetScene, true))
         {
-            Debug.LogError("COMPLETE MAP BUILD: Could not create GreyboxBattlefield01 scene.");
+            Debug.LogError("CHATGPT MAP BUILD: Could not create GreyboxBattlefield01 from the Original Map template.");
             return;
         }
 
-        Scene target = SceneManager.GetActiveScene();
+        Scene target = EditorSceneManager.OpenScene(TargetScene, OpenSceneMode.Single);
         if (!target.IsValid() || target.path != TargetScene)
         {
-            Debug.LogError($"COMPLETE MAP BUILD: Expected active scene '{TargetScene}', but got '{target.path}'.");
+            Debug.LogError($"CHATGPT MAP BUILD: Expected active scene '{TargetScene}', but got '{target.path}'.");
             return;
         }
 
@@ -67,8 +68,6 @@ public static class GreyboxBattlefieldSafeBuilder
             EditorSceneManager.MarkSceneDirty(target);
             EditorSceneManager.SaveScene(target);
 
-            // These are intentionally called through their public editor entry points so the
-            // same operations can still be run independently while debugging.
             GreyboxBattlefieldGameplayWiring.WireForPlay();
             GreyboxBattlefieldReadabilityPass.Apply();
             GreyboxSpawnerReferenceRepair.Repair();
@@ -80,65 +79,28 @@ public static class GreyboxBattlefieldSafeBuilder
         }
         catch (Exception ex)
         {
-            Debug.LogError($"COMPLETE MAP BUILD: Failed while creating the playable map. {ex.Message}\n{ex.StackTrace}");
+            Debug.LogError($"CHATGPT MAP BUILD: Failed while creating the playable map. {ex.Message}\n{ex.StackTrace}");
             return;
         }
 
         Selection.activeGameObject = GameObject.Find(GeneratedRootName);
 
         Debug.Log(
-            "COMPLETE MAP BUILD: Greybox Battlefield 01 is fully rebuilt and saved. " +
-            "Geometry, 3 sectors, 6 objectives, bases, spawn references, readability pass and NavMesh are applied. " +
-            "IMPORTANT: commit Assets/Scenes/GreyboxBattlefield01.unity and its .meta file in GitHub Desktop so this tested map exists in source control.");
+            "CHATGPT MAP BUILD: GreyboxBattlefield01 rebuilt from the recovered gameplay template. " +
+            "The Original Map was left untouched. Geometry, 3 sectors, 6 objectives, dynamic bases, " +
+            "spawn references, readability and NavMesh have been applied. Test the map before committing the generated scene.");
     }
 
-    // Kept as a compatibility menu item because earlier instructions referred to it.
-    [MenuItem("RTS/Maps/Build Greybox Battlefield 01 (Safe)")]
-    public static void BuildSafe()
+    [MenuItem("RTS/Maps/Rebuild Greybox Battlefield 01 (Complete)")]
+    private static void RebuildLegacyMenuName()
     {
         RebuildComplete();
     }
 
-    [MenuItem("RTS/Maps/Clean Greybox Artifacts From SampleScene")]
-    public static void CleanSampleScene()
+    [MenuItem("RTS/Maps/Build Greybox Battlefield 01 (Safe)")]
+    public static void BuildSafe()
     {
-        if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
-
-        Scene source = EditorSceneManager.OpenScene(SourceScene, OpenSceneMode.Single);
-        if (!source.IsValid())
-        {
-            Debug.LogError("MAP CLEANUP: Could not open SampleScene.");
-            return;
-        }
-
-        bool removed = RemoveAccidentalGeneratedMapFromSource(source);
-        if (removed)
-        {
-            EditorSceneManager.MarkSceneDirty(source);
-            EditorSceneManager.SaveScene(source);
-            Debug.Log("MAP CLEANUP: Removed GreyboxBattlefield01_Generated from SampleScene and saved the clean source scene.");
-        }
-        else
-        {
-            Debug.Log("MAP CLEANUP: SampleScene already contains no generated Greybox Battlefield root.");
-        }
-    }
-
-    private static bool RemoveAccidentalGeneratedMapFromSource(Scene source)
-    {
-        if (!source.IsValid()) return false;
-
-        bool removedAny = false;
-        foreach (GameObject rootObject in source.GetRootGameObjects())
-        {
-            if (rootObject != null && rootObject.name == GeneratedRootName)
-            {
-                UnityEngine.Object.DestroyImmediate(rootObject);
-                removedAny = true;
-            }
-        }
-
-        return removedAny;
+        RebuildComplete();
     }
 
     private static void InvokeBuilder(string methodName, params object[] args)
