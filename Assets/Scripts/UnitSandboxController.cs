@@ -20,6 +20,12 @@ public sealed class UnitSandboxController : MonoBehaviour
         Tank
     }
 
+    private enum DestructibilityChoice
+    {
+        Destructible,
+        Invulnerable
+    }
+
     [Header("Real Gameplay Prefabs")]
     public GameObject attackerAssaultPrefab;
     public GameObject defenderAssaultPrefab;
@@ -50,16 +56,19 @@ public sealed class UnitSandboxController : MonoBehaviour
     private readonly List<GameObject> spawnedObjects = new List<GameObject>();
     private readonly List<GameObject> duelObjects = new List<GameObject>();
     private readonly string[] duelChoiceNames = { "Assault", "Engineer", "Recon", "Support", "Tank" };
+    private readonly string[] destructibilityNames = { "Destructible", "Invulnerable" };
 
     private SandboxUnitChoice duelAttackerChoice = SandboxUnitChoice.Assault;
     private SandboxUnitChoice duelDefenderChoice = SandboxUnitChoice.Assault;
-    private bool duelAttackerDestructible = true;
-    private bool duelDefenderDestructible = true;
+    private DestructibilityChoice duelAttackerDestructibility = DestructibilityChoice.Destructible;
+    private DestructibilityChoice duelDefenderDestructibility = DestructibilityChoice.Destructible;
 
     private GUIStyle titleStyle;
     private GUIStyle sectionStyle;
     private GUIStyle buttonStyle;
     private GUIStyle labelStyle;
+    private GUIStyle selectedChoiceStyle;
+    private GUIStyle unselectedChoiceStyle;
     private Vector2 panelScroll;
     private Vector3 cameraStartPosition;
     private Quaternion cameraStartRotation;
@@ -85,7 +94,7 @@ public sealed class UnitSandboxController : MonoBehaviour
     {
         EnsureStyles();
 
-        const float width = 300f;
+        const float width = 320f;
         GUILayout.BeginArea(new Rect(14f, 14f, width, Screen.height - 28f), GUI.skin.box);
         panelScroll = GUILayout.BeginScrollView(panelScroll, false, true);
 
@@ -126,29 +135,58 @@ public sealed class UnitSandboxController : MonoBehaviour
     private void DrawDuelPanel()
     {
         GUILayout.Label("1 v 1 DUEL", sectionStyle);
-        GUILayout.Label("Choose one unit per side, decide whether each can be destroyed, then start a clean controlled fight.", labelStyle);
-        GUILayout.Space(6f);
+        GUILayout.Label("Choose one unit per side and explicitly choose whether each can be destroyed.", labelStyle);
+        GUILayout.Space(8f);
 
         GUILayout.Label("ATTACKER UNIT", labelStyle);
-        duelAttackerChoice = (SandboxUnitChoice)GUILayout.SelectionGrid((int)duelAttackerChoice, duelChoiceNames, 3);
-        duelAttackerDestructible = GUILayout.Toggle(duelAttackerDestructible, "Attacker destructible");
+        duelAttackerChoice = DrawUnitChoice(duelAttackerChoice);
+        GUILayout.Label("ATTACKER DAMAGE STATE", labelStyle);
+        duelAttackerDestructibility = DrawDestructibilityChoice(duelAttackerDestructibility);
 
-        GUILayout.Space(6f);
+        GUILayout.Space(10f);
         GUILayout.Label("DEFENDER UNIT", labelStyle);
-        duelDefenderChoice = (SandboxUnitChoice)GUILayout.SelectionGrid((int)duelDefenderChoice, duelChoiceNames, 3);
-        duelDefenderDestructible = GUILayout.Toggle(duelDefenderDestructible, "Defender destructible");
+        duelDefenderChoice = DrawUnitChoice(duelDefenderChoice);
+        GUILayout.Label("DEFENDER DAMAGE STATE", labelStyle);
+        duelDefenderDestructibility = DrawDestructibilityChoice(duelDefenderDestructibility);
 
-        GUILayout.Space(8f);
+        GUILayout.Space(10f);
         if (GUILayout.Button("START / RESET 1 v 1", buttonStyle)) StartDuel();
         if (GUILayout.Button("Clear 1 v 1", buttonStyle)) ClearDuel();
+    }
+
+    private SandboxUnitChoice DrawUnitChoice(SandboxUnitChoice current)
+    {
+        GUILayout.BeginHorizontal();
+        for (int i = 0; i < duelChoiceNames.Length; i++)
+        {
+            GUIStyle style = i == (int)current ? selectedChoiceStyle : unselectedChoiceStyle;
+            if (GUILayout.Button(duelChoiceNames[i], style)) current = (SandboxUnitChoice)i;
+        }
+        GUILayout.EndHorizontal();
+        return current;
+    }
+
+    private DestructibilityChoice DrawDestructibilityChoice(DestructibilityChoice current)
+    {
+        GUILayout.BeginHorizontal();
+        for (int i = 0; i < destructibilityNames.Length; i++)
+        {
+            GUIStyle style = i == (int)current ? selectedChoiceStyle : unselectedChoiceStyle;
+            if (GUILayout.Button(destructibilityNames[i], style)) current = (DestructibilityChoice)i;
+        }
+        GUILayout.EndHorizontal();
+        return current;
     }
 
     private void StartDuel()
     {
         ClearDuel();
 
-        GameObject attacker = SpawnDuelUnit(duelAttackerChoice, "Attacker", duelAttackerSpawn, duelAttackerDestructible);
-        GameObject defender = SpawnDuelUnit(duelDefenderChoice, "Defender", duelDefenderSpawn, duelDefenderDestructible);
+        bool attackerDestructible = duelAttackerDestructibility == DestructibilityChoice.Destructible;
+        bool defenderDestructible = duelDefenderDestructibility == DestructibilityChoice.Destructible;
+
+        GameObject attacker = SpawnDuelUnit(duelAttackerChoice, "Attacker", duelAttackerSpawn, attackerDestructible);
+        GameObject defender = SpawnDuelUnit(duelDefenderChoice, "Defender", duelDefenderSpawn, defenderDestructible);
 
         if (attacker != null) FaceTowards(attacker, duelDefenderSpawn);
         if (defender != null) FaceTowards(defender, duelAttackerSpawn);
@@ -162,31 +200,16 @@ public sealed class UnitSandboxController : MonoBehaviour
         switch (choice)
         {
             case SandboxUnitChoice.Engineer:
-                unit = CreateInfantry(
-                    attacker ? attackerEngineerPrefab : defenderEngineerPrefab,
-                    factionTag,
-                    UnitClass.Engineer,
-                    position,
-                    false);
+                unit = CreateInfantry(attacker ? attackerEngineerPrefab : defenderEngineerPrefab, factionTag, UnitClass.Engineer, position, false);
                 break;
 
             case SandboxUnitChoice.Recon:
-                unit = CreateInfantry(
-                    attacker ? attackerAssaultPrefab : defenderAssaultPrefab,
-                    factionTag,
-                    UnitClass.Recon,
-                    position,
-                    false);
+                unit = CreateInfantry(attacker ? attackerAssaultPrefab : defenderAssaultPrefab, factionTag, UnitClass.Recon, position, false);
                 if (unit != null) ReconUnitProfile.ApplyIfRecon(unit);
                 break;
 
             case SandboxUnitChoice.Support:
-                unit = CreateInfantry(
-                    attacker ? attackerAssaultPrefab : defenderAssaultPrefab,
-                    factionTag,
-                    UnitClass.Support,
-                    position,
-                    false);
+                unit = CreateInfantry(attacker ? attackerAssaultPrefab : defenderAssaultPrefab, factionTag, UnitClass.Support, position, false);
                 if (unit != null) SupportUnitProfile.ApplyIfSupport(unit);
                 break;
 
@@ -195,12 +218,7 @@ public sealed class UnitSandboxController : MonoBehaviour
                 break;
 
             default:
-                unit = CreateInfantry(
-                    attacker ? attackerAssaultPrefab : defenderAssaultPrefab,
-                    factionTag,
-                    UnitClass.Assault,
-                    position,
-                    false);
+                unit = CreateInfantry(attacker ? attackerAssaultPrefab : defenderAssaultPrefab, factionTag, UnitClass.Assault, position, false);
                 break;
         }
 
@@ -330,9 +348,9 @@ public sealed class UnitSandboxController : MonoBehaviour
         Vector3[] offsets =
         {
             new Vector3(-2.2f, 0f, -1.6f),
-            new Vector3( 2.2f, 0f, -1.6f),
-            new Vector3(-2.2f, 0f,  1.6f),
-            new Vector3( 2.2f, 0f,  1.6f)
+            new Vector3(2.2f, 0f, -1.6f),
+            new Vector3(-2.2f, 0f, 1.6f),
+            new Vector3(2.2f, 0f, 1.6f)
         };
 
         foreach (Vector3 offset in offsets)
@@ -474,10 +492,7 @@ public sealed class UnitSandboxController : MonoBehaviour
             float scroll = mouse.scroll.ReadValue().y;
             if (Mathf.Abs(scroll) > 0.01f)
             {
-                camera.fieldOfView = Mathf.Clamp(
-                    camera.fieldOfView - scroll * scrollZoomSpeed,
-                    minFieldOfView,
-                    maxFieldOfView);
+                camera.fieldOfView = Mathf.Clamp(camera.fieldOfView - scroll * scrollZoomSpeed, minFieldOfView, maxFieldOfView);
             }
         }
     }
@@ -524,5 +539,21 @@ public sealed class UnitSandboxController : MonoBehaviour
             wordWrap = true,
             fixedHeight = 32f
         };
+
+        unselectedChoiceStyle = new GUIStyle(GUI.skin.button)
+        {
+            fontSize = 11,
+            wordWrap = true,
+            fixedHeight = 30f
+        };
+
+        selectedChoiceStyle = new GUIStyle(unselectedChoiceStyle);
+        selectedChoiceStyle.fontStyle = FontStyle.Bold;
+        selectedChoiceStyle.normal.textColor = Color.white;
+        selectedChoiceStyle.hover.textColor = Color.white;
+        selectedChoiceStyle.active.textColor = Color.white;
+        selectedChoiceStyle.normal.background = GUI.skin.button.active.background;
+        selectedChoiceStyle.hover.background = GUI.skin.button.active.background;
+        selectedChoiceStyle.active.background = GUI.skin.button.active.background;
     }
 }
