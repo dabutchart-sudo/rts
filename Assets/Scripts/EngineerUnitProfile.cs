@@ -1,9 +1,10 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
 /// Gives Engineer infantry an automatic anti-vehicle rocket launcher.
 /// The Engineer keeps its normal rifle combat, but periodically engages enemy vehicles
-/// with a separate, slower, harder-hitting projectile.
+/// with a separate, slower, harder-hitting explosive projectile.
 /// </summary>
 public sealed class EngineerUnitProfile : MonoBehaviour
 {
@@ -13,6 +14,10 @@ public sealed class EngineerUnitProfile : MonoBehaviour
     [SerializeField] private float rocketDamage = 120f;
     [SerializeField] private float rocketSpeed = 26f;
     [SerializeField] private float rocketVisualScale = 0.22f;
+
+    [Header("Rocket Blast")]
+    [SerializeField] private float blastRadius = 4.5f;
+    [SerializeField, Range(0f, 1f)] private float edgeDamageMultiplier = 0.20f;
 
     private float nextRocketTime;
 
@@ -96,8 +101,10 @@ public sealed class EngineerUnitProfile : MonoBehaviour
         Renderer renderer = rocket.GetComponent<Renderer>();
         if (renderer != null) renderer.material.color = new Color(1f, 0.55f, 0.1f, 1f);
 
+        string enemyTag = CompareTag("Attacker") ? "Defender" : "Attacker";
+
         EngineerRocket projectile = rocket.AddComponent<EngineerRocket>();
-        projectile.Initialize(target, rocketDamage, rocketSpeed);
+        projectile.Initialize(target, enemyTag, rocketDamage, rocketSpeed, blastRadius, edgeDamageMultiplier);
     }
 
     public static void ApplyIfEngineer(GameObject unit)
@@ -111,15 +118,21 @@ public sealed class EngineerUnitProfile : MonoBehaviour
 public sealed class EngineerRocket : MonoBehaviour
 {
     private GameObject target;
+    private string enemyTag;
     private float damage;
     private float speed;
+    private float blastRadius;
+    private float edgeDamageMultiplier;
     private float expireTime;
 
-    public void Initialize(GameObject targetObject, float damageAmount, float projectileSpeed)
+    public void Initialize(GameObject targetObject, string targetFactionTag, float damageAmount, float projectileSpeed, float radius, float edgeMultiplier)
     {
         target = targetObject;
+        enemyTag = targetFactionTag;
         damage = Mathf.Max(0f, damageAmount);
         speed = Mathf.Max(1f, projectileSpeed);
+        blastRadius = Mathf.Max(0.1f, radius);
+        edgeDamageMultiplier = Mathf.Clamp01(edgeMultiplier);
         expireTime = Time.time + 5f;
     }
 
@@ -136,9 +149,45 @@ public sealed class EngineerRocket : MonoBehaviour
 
         if (Vector3.Distance(transform.position, targetPoint) <= 0.35f)
         {
-            Health health = target.GetComponent<Health>();
-            if (health != null) health.TakeDamage(damage);
-            Destroy(gameObject);
+            Explode(targetPoint);
         }
+    }
+
+    private void Explode(Vector3 position)
+    {
+        ExplosiveImpactPresentation.Play(position, blastRadius);
+
+        HashSet<Health> damagedTargets = new HashSet<Health>();
+        Collider[] hits = Physics.OverlapSphere(position, blastRadius);
+
+        foreach (Collider hit in hits)
+        {
+            if (hit == null) continue;
+
+            Health health = hit.GetComponentInParent<Health>();
+            if (health == null || damagedTargets.Contains(health)) continue;
+            if (!health.CompareTag(enemyTag)) continue;
+
+            damagedTargets.Add(health);
+
+            Vector3 closestPoint = hit.ClosestPoint(position);
+            float distance = Vector3.Distance(position, closestPoint);
+            float normalizedDistance = Mathf.Clamp01(distance / blastRadius);
+            float multiplier = Mathf.Lerp(1f, edgeDamageMultiplier, normalizedDistance);
+            health.TakeDamage(damage * multiplier);
+        }
+
+        // The intended vehicle must still receive the direct blast even if its collider setup
+        // is unusual enough not to be returned by OverlapSphere.
+        if (target != null)
+        {
+            Health targetHealth = target.GetComponent<Health>();
+            if (targetHealth != null && targetHealth.CompareTag(enemyTag) && !damagedTargets.Contains(targetHealth))
+            {
+                targetHealth.TakeDamage(damage);
+            }
+        }
+
+        Destroy(gameObject);
     }
 }
