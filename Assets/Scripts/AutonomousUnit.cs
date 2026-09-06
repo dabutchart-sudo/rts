@@ -460,87 +460,25 @@ public class AutonomousUnit : MonoBehaviour
         return ControlModeManager.Instance != null && ControlModeManager.Instance.IsPlayerFaction(gameObject);
     }
 
+    private Faction GetFaction()
+    {
+        return isAttacker ? Faction.Attacker : Faction.Defender;
+    }
+
     private bool IsPositionWithinActiveBounds(Vector3 pos)
     {
-        return !TryGetAllowedCombatBounds(out Bounds allowedBounds) || allowedBounds.Contains(pos);
-    }
-
-    private bool TryGetAllowedCombatBounds(out Bounds allowedBounds)
-    {
-        allowedBounds = default;
-
-        if (GameManager.Instance == null || GameManager.Instance.sectors == null || GameManager.Instance.sectors.Length == 0)
-        {
-            return false;
-        }
-
-        int activeIndex = Mathf.Clamp(GameManager.Instance.currentSectorIndex, 0, GameManager.Instance.sectors.Length - 1);
-        bool foundBounds = false;
-
-        if (GameManager.Instance.isTransitioningSector)
-        {
-            if (isAttacker)
-            {
-                // The newly captured sector remains the attacker's entire legal area until the
-                // countdown ends. They may clear it and assemble at the front, but cannot enter
-                // the next sector early.
-                EncapsulateSectorBounds(activeIndex, ref allowedBounds, ref foundBounds);
-            }
-            else
-            {
-                // Retreating defenders need access to both the lost sector and the next defensive
-                // sector so they can physically withdraw rather than being teleported.
-                int nextIndex = Mathf.Min(activeIndex + 1, GameManager.Instance.sectors.Length - 1);
-                for (int i = activeIndex; i <= nextIndex; i++)
-                {
-                    EncapsulateSectorBounds(i, ref allowedBounds, ref foundBounds);
-                }
-            }
-
-            return foundBounds;
-        }
-
-        if (isAttacker)
-        {
-            for (int i = 0; i <= activeIndex; i++)
-            {
-                EncapsulateSectorBounds(i, ref allowedBounds, ref foundBounds);
-            }
-        }
-        else
-        {
-            EncapsulateSectorBounds(activeIndex, ref allowedBounds, ref foundBounds);
-        }
-
-        return foundBounds;
-    }
-
-    private static void EncapsulateSectorBounds(int sectorIndex, ref Bounds combinedBounds, ref bool foundBounds)
-    {
-        if (GameManager.Instance == null || GameManager.Instance.sectors == null) return;
-        if (sectorIndex < 0 || sectorIndex >= GameManager.Instance.sectors.Length) return;
-
-        Sector sector = GameManager.Instance.sectors[sectorIndex];
-        if (sector == null || sector.sectorBounds.size.sqrMagnitude <= 0.01f) return;
-
-        if (!foundBounds)
-        {
-            combinedBounds = sector.sectorBounds;
-            foundBounds = true;
-        }
-        else
-        {
-            combinedBounds.Encapsulate(sector.sectorBounds.min);
-            combinedBounds.Encapsulate(sector.sectorBounds.max);
-        }
+        return BreakthroughFrontlineSystem.IsPositionAllowed(GetFaction(), pos);
     }
 
     private void CheckSectorBounds()
     {
-        if (!TryGetAllowedCombatBounds(out Bounds allowedBounds)) return;
-        if (allowedBounds.Contains(transform.position)) return;
+        Faction faction = GetFaction();
+        if (BreakthroughFrontlineSystem.IsPositionAllowed(faction, transform.position)) return;
 
-        Vector3 clampedPos = allowedBounds.ClosestPoint(transform.position);
+        if (!BreakthroughFrontlineSystem.TryGetClosestAllowedPoint(faction, transform.position, out Vector3 clampedPos))
+        {
+            return;
+        }
 
         if (agent == null)
         {
@@ -549,7 +487,10 @@ public class AutonomousUnit : MonoBehaviour
 
         if (agent != null && agent.enabled && agent.isOnNavMesh)
         {
-            if (NavMesh.SamplePosition(clampedPos, out NavMeshHit hit, 3f, NavMesh.AllAreas))
+            // Prefer a valid nearby NavMesh point, but never accept a sampled point that crosses
+            // back over the faction's legal Breakthrough territory.
+            if (NavMesh.SamplePosition(clampedPos, out NavMeshHit hit, 3f, NavMesh.AllAreas) &&
+                BreakthroughFrontlineSystem.IsPositionAllowed(faction, hit.position))
             {
                 clampedPos = hit.position;
             }
