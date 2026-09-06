@@ -11,6 +11,15 @@ using UnityEngine.InputSystem;
 /// </summary>
 public sealed class UnitSandboxController : MonoBehaviour
 {
+    private enum SandboxUnitChoice
+    {
+        Assault,
+        Engineer,
+        Recon,
+        Support,
+        Tank
+    }
+
     [Header("Real Gameplay Prefabs")]
     public GameObject attackerAssaultPrefab;
     public GameObject defenderAssaultPrefab;
@@ -24,6 +33,10 @@ public sealed class UnitSandboxController : MonoBehaviour
     public Vector3 attackerVehicleSpawn = new Vector3(-4f, 0f, 3f);
     public Vector3 defenderVehicleSpawn = new Vector3(4f, 0f, 3f);
 
+    [Header("1v1 Duel Area")]
+    public Vector3 duelAttackerSpawn = new Vector3(-5f, 0f, -6f);
+    public Vector3 duelDefenderSpawn = new Vector3(5f, 0f, -6f);
+
     [Header("Sandbox Placement")]
     [Tooltip("Small clearance above the sandbox floor after renderer-based placement.")]
     [SerializeField] private float groundClearance = 0.02f;
@@ -35,9 +48,19 @@ public sealed class UnitSandboxController : MonoBehaviour
     [SerializeField] private float maxFieldOfView = 70f;
 
     private readonly List<GameObject> spawnedObjects = new List<GameObject>();
+    private readonly List<GameObject> duelObjects = new List<GameObject>();
+    private readonly string[] duelChoiceNames = { "Assault", "Engineer", "Recon", "Support", "Tank" };
+
+    private SandboxUnitChoice duelAttackerChoice = SandboxUnitChoice.Assault;
+    private SandboxUnitChoice duelDefenderChoice = SandboxUnitChoice.Assault;
+    private bool duelAttackerDestructible = true;
+    private bool duelDefenderDestructible = true;
+
     private GUIStyle titleStyle;
+    private GUIStyle sectionStyle;
     private GUIStyle buttonStyle;
     private GUIStyle labelStyle;
+    private Vector2 panelScroll;
     private Vector3 cameraStartPosition;
     private Quaternion cameraStartRotation;
     private float cameraStartFieldOfView;
@@ -62,12 +85,18 @@ public sealed class UnitSandboxController : MonoBehaviour
     {
         EnsureStyles();
 
-        const float width = 285f;
+        const float width = 300f;
         GUILayout.BeginArea(new Rect(14f, 14f, width, Screen.height - 28f), GUI.skin.box);
+        panelScroll = GUILayout.BeginScrollView(panelScroll, false, true);
+
         GUILayout.Label("UNIT SANDBOX", titleStyle);
         GUILayout.Label("Real gameplay units. No XP, tickets or match rules.", labelStyle);
         GUILayout.Space(8f);
 
+        DrawDuelPanel();
+
+        GUILayout.Space(14f);
+        GUILayout.Label("FREE SPAWN", sectionStyle);
         GUILayout.Label("ATTACKERS", labelStyle);
         if (GUILayout.Button("Spawn Assault", buttonStyle)) SpawnInfantry(attackerAssaultPrefab, "Attacker", UnitClass.Assault, attackerSpawn);
         if (GUILayout.Button("Spawn Engineer", buttonStyle)) SpawnInfantry(attackerEngineerPrefab, "Attacker", UnitClass.Engineer, attackerSpawn);
@@ -82,25 +111,134 @@ public sealed class UnitSandboxController : MonoBehaviour
         if (GUILayout.Button("Spawn Unkillable Vehicle Target", buttonStyle)) SpawnVehicleTarget("Defender", defenderVehicleSpawn);
 
         GUILayout.Space(10f);
-        GUILayout.Label("TOOLS", labelStyle);
+        GUILayout.Label("GROUP TOOLS", sectionStyle);
         if (GUILayout.Button("Spawn 4 Defender Infantry Near Vehicle", buttonStyle)) SpawnDefenderCluster();
-        if (GUILayout.Button("Clear Spawned Units", buttonStyle)) ClearSpawned();
+        if (GUILayout.Button("Clear Free-Spawn Units", buttonStyle)) ClearFreeSpawned();
+        if (GUILayout.Button("Clear Everything", buttonStyle)) ClearEverything();
         if (GUILayout.Button("Reset Camera", buttonStyle)) ResetCamera();
 
-        GUILayout.FlexibleSpace();
+        GUILayout.Space(12f);
         GUILayout.Label("Camera: WASD / arrows to pan. Trackpad two-finger scroll or mouse wheel to zoom.", labelStyle);
+        GUILayout.EndScrollView();
         GUILayout.EndArea();
+    }
+
+    private void DrawDuelPanel()
+    {
+        GUILayout.Label("1 v 1 DUEL", sectionStyle);
+        GUILayout.Label("Choose one unit per side, decide whether each can be destroyed, then start a clean controlled fight.", labelStyle);
+        GUILayout.Space(6f);
+
+        GUILayout.Label("ATTACKER UNIT", labelStyle);
+        duelAttackerChoice = (SandboxUnitChoice)GUILayout.SelectionGrid((int)duelAttackerChoice, duelChoiceNames, 3);
+        duelAttackerDestructible = GUILayout.Toggle(duelAttackerDestructible, "Attacker destructible");
+
+        GUILayout.Space(6f);
+        GUILayout.Label("DEFENDER UNIT", labelStyle);
+        duelDefenderChoice = (SandboxUnitChoice)GUILayout.SelectionGrid((int)duelDefenderChoice, duelChoiceNames, 3);
+        duelDefenderDestructible = GUILayout.Toggle(duelDefenderDestructible, "Defender destructible");
+
+        GUILayout.Space(8f);
+        if (GUILayout.Button("START / RESET 1 v 1", buttonStyle)) StartDuel();
+        if (GUILayout.Button("Clear 1 v 1", buttonStyle)) ClearDuel();
+    }
+
+    private void StartDuel()
+    {
+        ClearDuel();
+
+        GameObject attacker = SpawnDuelUnit(duelAttackerChoice, "Attacker", duelAttackerSpawn, duelAttackerDestructible);
+        GameObject defender = SpawnDuelUnit(duelDefenderChoice, "Defender", duelDefenderSpawn, duelDefenderDestructible);
+
+        if (attacker != null) FaceTowards(attacker, duelDefenderSpawn);
+        if (defender != null) FaceTowards(defender, duelAttackerSpawn);
+    }
+
+    private GameObject SpawnDuelUnit(SandboxUnitChoice choice, string factionTag, Vector3 position, bool destructible)
+    {
+        bool attacker = factionTag == "Attacker";
+        GameObject unit;
+
+        switch (choice)
+        {
+            case SandboxUnitChoice.Engineer:
+                unit = CreateInfantry(
+                    attacker ? attackerEngineerPrefab : defenderEngineerPrefab,
+                    factionTag,
+                    UnitClass.Engineer,
+                    position,
+                    false);
+                break;
+
+            case SandboxUnitChoice.Recon:
+                unit = CreateInfantry(
+                    attacker ? attackerAssaultPrefab : defenderAssaultPrefab,
+                    factionTag,
+                    UnitClass.Recon,
+                    position,
+                    false);
+                if (unit != null) ReconUnitProfile.ApplyIfRecon(unit);
+                break;
+
+            case SandboxUnitChoice.Support:
+                unit = CreateInfantry(
+                    attacker ? attackerAssaultPrefab : defenderAssaultPrefab,
+                    factionTag,
+                    UnitClass.Support,
+                    position,
+                    false);
+                if (unit != null) SupportUnitProfile.ApplyIfSupport(unit);
+                break;
+
+            case SandboxUnitChoice.Tank:
+                unit = CreateVehicle(attackerTankPrefab, factionTag, position, !attacker, false);
+                break;
+
+            default:
+                unit = CreateInfantry(
+                    attacker ? attackerAssaultPrefab : defenderAssaultPrefab,
+                    factionTag,
+                    UnitClass.Assault,
+                    position,
+                    false);
+                break;
+        }
+
+        if (unit == null) return null;
+
+        unit.name = $"Sandbox_Duel_{factionTag}_{choice}";
+        SetDestructible(unit, destructible);
+        duelObjects.Add(unit);
+        return unit;
+    }
+
+    private static void SetDestructible(GameObject unit, bool destructible)
+    {
+        Health health = unit != null ? unit.GetComponent<Health>() : null;
+        if (health == null) return;
+
+        if (!destructible)
+        {
+            const float sandboxInvulnerableHealth = 1000000f;
+            health.maxHealth = sandboxInvulnerableHealth;
+            health.currentHealth = sandboxInvulnerableHealth;
+            health.UpdateHealthBar();
+        }
     }
 
     private void SpawnInfantry(GameObject prefab, string factionTag, UnitClass unitClass, Vector3 basePosition)
     {
+        CreateInfantry(prefab, factionTag, unitClass, basePosition + RandomSpawnOffset(1.5f), true);
+    }
+
+    private GameObject CreateInfantry(GameObject prefab, string factionTag, UnitClass unitClass, Vector3 position, bool trackAsFreeSpawn)
+    {
         if (prefab == null)
         {
             Debug.LogWarning($"SANDBOX: No prefab assigned for {factionTag} {unitClass}.");
-            return;
+            return null;
         }
 
-        Vector3 position = basePosition + RandomSpawnOffset(1.5f);
         GameObject unit = InstantiateSandboxPrefab(prefab, position, Quaternion.identity);
         unit.name = $"Sandbox_{factionTag}_{unitClass}";
         unit.tag = factionTag;
@@ -108,45 +246,48 @@ public sealed class UnitSandboxController : MonoBehaviour
         UnitCategoryIdentity.Ensure(unit, UnitCategory.Infantry);
         UnitClassIdentity.Ensure(unit, unitClass);
 
-        if (unitClass == UnitClass.Engineer)
-        {
-            EngineerUnitProfile.ApplyIfEngineer(unit);
-        }
+        if (unitClass == UnitClass.Engineer) EngineerUnitProfile.ApplyIfEngineer(unit);
+        if (unitClass == UnitClass.Recon) ReconUnitProfile.ApplyIfRecon(unit);
+        if (unitClass == UnitClass.Support) SupportUnitProfile.ApplyIfSupport(unit);
 
         DisableAutonomousMovement(unit);
         PlaceVisualsOnGround(unit, 0f);
-        spawnedObjects.Add(unit);
+
+        if (trackAsFreeSpawn) spawnedObjects.Add(unit);
+        return unit;
     }
 
     private void SpawnVehicle(GameObject prefab, string factionTag, Vector3 basePosition, bool recolorForDefender)
     {
+        CreateVehicle(prefab, factionTag, basePosition + RandomSpawnOffset(1.2f), recolorForDefender, true);
+    }
+
+    private GameObject CreateVehicle(GameObject prefab, string factionTag, Vector3 position, bool recolorForDefender, bool trackAsFreeSpawn)
+    {
         if (prefab == null)
         {
             Debug.LogWarning("SANDBOX: Attacker tank prefab is not assigned.");
-            return;
+            return null;
         }
 
-        GameObject vehicle = InstantiateSandboxPrefab(prefab, basePosition + RandomSpawnOffset(1.2f), Quaternion.identity);
+        GameObject vehicle = InstantiateSandboxPrefab(prefab, position, Quaternion.identity);
         vehicle.name = $"Sandbox_{factionTag}_Tank";
         vehicle.tag = factionTag;
         UnitCategoryIdentity.Ensure(vehicle, UnitCategory.Vehicle);
 
+        Combat combat = vehicle.GetComponent<Combat>();
+        if (combat != null) combat.enemyTag = factionTag == "Attacker" ? "Defender" : "Attacker";
+
         DisableAutonomousMovement(vehicle);
         PlaceVisualsOnGround(vehicle, 0f);
 
-        if (recolorForDefender)
-        {
-            Recolor(vehicle, FactionVisuals.DefenderColor);
-        }
-
-        spawnedObjects.Add(vehicle);
+        if (recolorForDefender) Recolor(vehicle, FactionVisuals.DefenderColor);
+        if (trackAsFreeSpawn) spawnedObjects.Add(vehicle);
+        return vehicle;
     }
 
     private static GameObject InstantiateSandboxPrefab(GameObject prefab, Vector3 position, Quaternion rotation)
     {
-        // The gameplay prefabs contain enabled NavMeshAgents. Instantiating them enabled in a
-        // scene with deliberately no NavMesh makes Unity emit an error before the sandbox can
-        // disable the agent. Temporarily disable the prefab's agent for the clone operation.
         NavMeshAgent prefabAgent = prefab.GetComponent<NavMeshAgent>();
         bool restoreAgent = prefabAgent != null && prefabAgent.enabled;
 
@@ -224,9 +365,6 @@ public sealed class UnitSandboxController : MonoBehaviour
         foreach (Renderer renderer in renderers)
         {
             if (renderer == null || !renderer.enabled) continue;
-
-            // Ignore world-space UI such as health bars/class labels. They should not affect
-            // the physical ground placement of the unit model.
             if (renderer.GetComponentInParent<Canvas>() != null) continue;
             if (renderer is TrailRenderer || renderer is LineRenderer) continue;
 
@@ -247,6 +385,15 @@ public sealed class UnitSandboxController : MonoBehaviour
         root.transform.position += Vector3.up * lift;
     }
 
+    private static void FaceTowards(GameObject unit, Vector3 targetPosition)
+    {
+        if (unit == null) return;
+
+        Vector3 direction = targetPosition - unit.transform.position;
+        direction.y = 0f;
+        if (direction.sqrMagnitude > 0.001f) unit.transform.rotation = Quaternion.LookRotation(direction.normalized);
+    }
+
     private static void Recolor(GameObject root, Color color)
     {
         Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
@@ -259,7 +406,17 @@ public sealed class UnitSandboxController : MonoBehaviour
         }
     }
 
-    private void ClearSpawned()
+    private void ClearDuel()
+    {
+        for (int i = duelObjects.Count - 1; i >= 0; i--)
+        {
+            if (duelObjects[i] != null) Destroy(duelObjects[i]);
+        }
+
+        duelObjects.Clear();
+    }
+
+    private void ClearFreeSpawned()
     {
         for (int i = spawnedObjects.Count - 1; i >= 0; i--)
         {
@@ -269,11 +426,23 @@ public sealed class UnitSandboxController : MonoBehaviour
         spawnedObjects.Clear();
     }
 
+    private void ClearEverything()
+    {
+        ClearDuel();
+        ClearFreeSpawned();
+    }
+
     private void PruneDestroyedObjects()
     {
-        for (int i = spawnedObjects.Count - 1; i >= 0; i--)
+        PruneList(spawnedObjects);
+        PruneList(duelObjects);
+    }
+
+    private static void PruneList(List<GameObject> objects)
+    {
+        for (int i = objects.Count - 1; i >= 0; i--)
         {
-            if (spawnedObjects[i] == null) spawnedObjects.RemoveAt(i);
+            if (objects[i] == null) objects.RemoveAt(i);
         }
     }
 
@@ -332,6 +501,13 @@ public sealed class UnitSandboxController : MonoBehaviour
             fontSize = 20,
             fontStyle = FontStyle.Bold,
             alignment = TextAnchor.MiddleCenter,
+            normal = { textColor = Color.white }
+        };
+
+        sectionStyle = new GUIStyle(GUI.skin.label)
+        {
+            fontSize = 14,
+            fontStyle = FontStyle.Bold,
             normal = { textColor = Color.white }
         };
 
