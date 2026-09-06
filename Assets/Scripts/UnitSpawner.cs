@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 public class UnitSpawner : MonoBehaviour
@@ -37,7 +38,11 @@ public class UnitSpawner : MonoBehaviour
         hasSpawned = true;
 
         int target = isDefenderSpawner ? GetDefenderAssaultCap() : GetAttackerAssaultCap();
-        int spawned = SpawnAssaultsUpToLimit(target, false);
+        int sectorIndex = GameManager.Instance != null ? GameManager.Instance.currentSectorIndex : 0;
+
+        // Opening deployment always comes from the faction base. Captured-point spawning is
+        // deliberately a reinforcement rule, not an opening-wave rule.
+        int spawned = SpawnAssaultsUpToLimit(target, false, sectorIndex, false);
         string teamName = isDefenderSpawner ? "Defenders" : "Attackers";
 
         Debug.Log($"🔢 SPAWN COUNT CHECK: Deployed {spawned} Assaults for {teamName}; target population {target}.");
@@ -47,7 +52,8 @@ public class UnitSpawner : MonoBehaviour
     {
         if (count <= 0) return;
 
-        int spawned = SpawnAssaultsUpToLimit(count, false);
+        int sectorIndex = GameManager.Instance != null ? GameManager.Instance.currentSectorIndex : 0;
+        int spawned = SpawnAssaultsUpToLimit(count, false, sectorIndex, true);
         int alive = GetAliveAssaultCount();
         int cap = isDefenderSpawner ? GetDefenderAssaultCap() : GetAttackerAssaultCap();
         string teamName = isDefenderSpawner ? "DEFENDER" : "ATTACKER";
@@ -57,18 +63,29 @@ public class UnitSpawner : MonoBehaviour
 
     public int ReplenishAssaultsForSectorStart()
     {
+        int sectorIndex = GameManager.Instance != null ? GameManager.Instance.currentSectorIndex : 0;
+        return ReplenishAssaultsForTransition(sectorIndex, true);
+    }
+
+    /// <summary>
+    /// Replenishes this faction to its Assault cap while preserving every surviving Assault.
+    /// The caller explicitly chooses the sector whose legal spawn sources should be used. This is
+    /// what lets defenders build the next defensive line while the old sector is still transitioning.
+    /// </summary>
+    public int ReplenishAssaultsForTransition(int spawnSectorIndex, bool preferOwnedCapturePoints)
+    {
         int cap = isDefenderSpawner ? GetDefenderAssaultCap() : GetAttackerAssaultCap();
         int before = GetAliveAssaultCount();
         int missing = Mathf.Max(0, cap - before);
 
         bool spendTickets = !isDefenderSpawner;
-        int spawned = SpawnAssaultsUpToLimit(missing, spendTickets);
+        int spawned = SpawnAssaultsUpToLimit(missing, spendTickets, spawnSectorIndex, preferOwnedCapturePoints);
 
         int after = GetAliveAssaultCount();
         string teamName = isDefenderSpawner ? "DEFENDER" : "ATTACKER";
         string funding = isDefenderSpawner ? "unlimited defender reinforcements" : "attacker tickets";
 
-        Debug.Log($"🚩 {teamName} SECTOR START: Preserved {before} surviving Assaults, replenished {spawned} using {funding}, ready {after}/{cap}.");
+        Debug.Log($"🚩 {teamName} TRANSITION READY: Preserved {before} surviving Assaults, replenished {spawned} using {funding}, ready {after}/{cap}.");
         return spawned;
     }
 
@@ -83,7 +100,8 @@ public class UnitSpawner : MonoBehaviour
             if (defenderTimer >= defenderAutoSpawnInterval)
             {
                 defenderTimer = 0f;
-                SpawnAssaultsUpToLimit(defenderWaveSize, true);
+                int sectorIndex = GameManager.Instance != null ? GameManager.Instance.currentSectorIndex : 0;
+                SpawnAssaultsUpToLimit(defenderWaveSize, true, sectorIndex, true);
             }
         }
     }
@@ -96,10 +114,11 @@ public class UnitSpawner : MonoBehaviour
 
     void SpawnAssaultDelayed()
     {
-        SpawnAssaultsUpToLimit(1, true);
+        int sectorIndex = GameManager.Instance != null ? GameManager.Instance.currentSectorIndex : 0;
+        SpawnAssaultsUpToLimit(1, true, sectorIndex, true);
     }
 
-    private int SpawnAssaultsUpToLimit(int requestedCount, bool spendTicket)
+    private int SpawnAssaultsUpToLimit(int requestedCount, bool spendTicket, int spawnSectorIndex, bool preferOwnedCapturePoints)
     {
         if (requestedCount <= 0) return 0;
 
@@ -120,7 +139,7 @@ public class UnitSpawner : MonoBehaviour
                 }
             }
 
-            SpawnSingleUnit();
+            SpawnSingleUnit(spawnSectorIndex, preferOwnedCapturePoints);
             spawned++;
         }
 
@@ -163,38 +182,13 @@ public class UnitSpawner : MonoBehaviour
         return count;
     }
 
-    void SpawnSingleUnit()
+    void SpawnSingleUnit(int spawnSectorIndex, bool preferOwnedCapturePoints)
     {
         if (assaultPrefab == null) return;
 
-        Vector3 spawnPos = transform.position;
-
-        if (GameManager.Instance != null &&
-            GameManager.Instance.sectors != null &&
-            GameManager.Instance.sectors.Length > GameManager.Instance.currentSectorIndex)
-        {
-            Sector currentSector = GameManager.Instance.sectors[GameManager.Instance.currentSectorIndex];
-
-            if (isDefenderSpawner)
-            {
-                if (currentSector.defenderBase != null && currentSector.defenderBase.spawnPoint != null)
-                {
-                    spawnPos = currentSector.defenderBase.spawnPoint.position;
-                }
-                else if (currentSector.attackerBase != null && currentSector.attackerBase.spawnPoint != null)
-                {
-                    spawnPos = -currentSector.attackerBase.spawnPoint.position;
-                    spawnPos.y = currentSector.attackerBase.spawnPoint.position.y;
-                }
-            }
-            else if (currentSector.attackerBase != null && currentSector.attackerBase.spawnPoint != null)
-            {
-                spawnPos = currentSector.attackerBase.spawnPoint.position;
-            }
-        }
-
-        Vector2 randomOffset = Random.insideUnitCircle * 8f;
-        Vector3 finalPos = spawnPos + new Vector3(randomOffset.x, 0, randomOffset.y);
+        Vector3 spawnPos = ResolveSpawnPosition(spawnSectorIndex, preferOwnedCapturePoints);
+        Vector2 randomOffset = Random.insideUnitCircle * 2.5f;
+        Vector3 finalPos = spawnPos + new Vector3(randomOffset.x, 0f, randomOffset.y);
         GameObject spawnedUnit = Instantiate(assaultPrefab, finalPos, Quaternion.identity);
 
         UnitCategoryIdentity.Ensure(spawnedUnit, UnitCategory.Infantry);
@@ -211,5 +205,48 @@ public class UnitSpawner : MonoBehaviour
         {
             squadManager.RegisterAssaultUnit(spawnedUnit);
         }
+    }
+
+    private Vector3 ResolveSpawnPosition(int sectorIndex, bool preferOwnedCapturePoints)
+    {
+        if (GameManager.Instance == null || GameManager.Instance.sectors == null ||
+            sectorIndex < 0 || sectorIndex >= GameManager.Instance.sectors.Length)
+        {
+            return transform.position;
+        }
+
+        Sector sector = GameManager.Instance.sectors[sectorIndex];
+        Faction faction = isDefenderSpawner ? Faction.Defender : Faction.Attacker;
+
+        if (preferOwnedCapturePoints)
+        {
+            Transform captureSpawn = GetOwnedCapturePointSpawn(sector, faction);
+            if (captureSpawn != null) return captureSpawn.position;
+        }
+
+        BaseZone factionBase = isDefenderSpawner ? sector.defenderBase : sector.attackerBase;
+        if (factionBase != null)
+        {
+            Transform baseSpawn = factionBase.spawnPoint != null ? factionBase.spawnPoint : factionBase.transform;
+            if (baseSpawn != null) return baseSpawn.position;
+        }
+
+        return transform.position;
+    }
+
+    private static Transform GetOwnedCapturePointSpawn(Sector sector, Faction faction)
+    {
+        if (sector == null || sector.capturePoints == null) return null;
+
+        List<CapturePoint> owned = new List<CapturePoint>();
+        foreach (CapturePoint cp in sector.capturePoints)
+        {
+            if (cp != null && cp.IsControlledBy(faction)) owned.Add(cp);
+        }
+
+        if (owned.Count == 0) return null;
+
+        CapturePoint chosen = owned[Random.Range(0, owned.Count)];
+        return chosen.GetNextAvailableSpawnPoint();
     }
 }
