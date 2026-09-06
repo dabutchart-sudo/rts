@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
+using UnityEngine.InputSystem;
 
 /// <summary>
 /// Runtime control panel for the developer-only unit sandbox.
@@ -22,6 +23,12 @@ public sealed class UnitSandboxController : MonoBehaviour
     public Vector3 defenderSpawn = new Vector3(9f, 0f, 0f);
     public Vector3 attackerVehicleSpawn = new Vector3(-4f, 0f, 3f);
     public Vector3 defenderVehicleSpawn = new Vector3(4f, 0f, 3f);
+
+    [Header("Sandbox Camera")]
+    [SerializeField] private float panSpeed = 12f;
+    [SerializeField] private float scrollZoomSpeed = 0.035f;
+    [SerializeField] private float minFieldOfView = 28f;
+    [SerializeField] private float maxFieldOfView = 70f;
 
     private readonly List<GameObject> spawnedObjects = new List<GameObject>();
     private GUIStyle titleStyle;
@@ -77,7 +84,7 @@ public sealed class UnitSandboxController : MonoBehaviour
         if (GUILayout.Button("Reset Camera", buttonStyle)) ResetCamera();
 
         GUILayout.FlexibleSpace();
-        GUILayout.Label("Camera: WASD / arrows to pan, mouse wheel to zoom.", labelStyle);
+        GUILayout.Label("Camera: WASD / arrows to pan. Trackpad two-finger scroll or mouse wheel to zoom.", labelStyle);
         GUILayout.EndArea();
     }
 
@@ -103,6 +110,7 @@ public sealed class UnitSandboxController : MonoBehaviour
         }
 
         DisableAutonomousMovement(unit);
+        PlaceOnGround(unit, 0f);
         spawnedObjects.Add(unit);
     }
 
@@ -120,6 +128,7 @@ public sealed class UnitSandboxController : MonoBehaviour
         UnitCategoryIdentity.Ensure(vehicle, UnitCategory.Vehicle);
 
         DisableAutonomousMovement(vehicle);
+        PlaceOnGround(vehicle, 0f);
 
         if (recolorForDefender)
         {
@@ -184,6 +193,33 @@ public sealed class UnitSandboxController : MonoBehaviour
         if (agent != null && agent.enabled) agent.enabled = false;
     }
 
+    private static void PlaceOnGround(GameObject root, float groundY)
+    {
+        Collider[] colliders = root.GetComponentsInChildren<Collider>(true);
+        bool foundBounds = false;
+        Bounds bounds = default;
+
+        foreach (Collider collider in colliders)
+        {
+            if (collider == null || !collider.enabled || collider.isTrigger) continue;
+
+            if (!foundBounds)
+            {
+                bounds = collider.bounds;
+                foundBounds = true;
+            }
+            else
+            {
+                bounds.Encapsulate(collider.bounds);
+            }
+        }
+
+        if (!foundBounds) return;
+
+        float lift = groundY - bounds.min.y;
+        root.transform.position += Vector3.up * lift;
+    }
+
     private static void Recolor(GameObject root, Color color)
     {
         Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
@@ -219,16 +255,34 @@ public sealed class UnitSandboxController : MonoBehaviour
         Camera camera = Camera.main;
         if (camera == null) return;
 
-        float horizontal = Input.GetAxisRaw("Horizontal");
-        float vertical = Input.GetAxisRaw("Vertical");
+        Vector2 movement = Vector2.zero;
+        Keyboard keyboard = Keyboard.current;
+
+        if (keyboard != null)
+        {
+            if (keyboard.aKey.isPressed || keyboard.leftArrowKey.isPressed) movement.x -= 1f;
+            if (keyboard.dKey.isPressed || keyboard.rightArrowKey.isPressed) movement.x += 1f;
+            if (keyboard.sKey.isPressed || keyboard.downArrowKey.isPressed) movement.y -= 1f;
+            if (keyboard.wKey.isPressed || keyboard.upArrowKey.isPressed) movement.y += 1f;
+        }
+
+        if (movement.sqrMagnitude > 1f) movement.Normalize();
+
         Vector3 right = Vector3.ProjectOnPlane(camera.transform.right, Vector3.up).normalized;
         Vector3 forward = Vector3.ProjectOnPlane(camera.transform.forward, Vector3.up).normalized;
-        camera.transform.position += (right * horizontal + forward * vertical) * (12f * Time.unscaledDeltaTime);
+        camera.transform.position += (right * movement.x + forward * movement.y) * (panSpeed * Time.unscaledDeltaTime);
 
-        float scroll = Input.mouseScrollDelta.y;
-        if (Mathf.Abs(scroll) > 0.01f)
+        Mouse mouse = Mouse.current;
+        if (mouse != null)
         {
-            camera.fieldOfView = Mathf.Clamp(camera.fieldOfView - scroll * 3f, 28f, 70f);
+            float scroll = mouse.scroll.ReadValue().y;
+            if (Mathf.Abs(scroll) > 0.01f)
+            {
+                camera.fieldOfView = Mathf.Clamp(
+                    camera.fieldOfView - scroll * scrollZoomSpeed,
+                    minFieldOfView,
+                    maxFieldOfView);
+            }
         }
     }
 
