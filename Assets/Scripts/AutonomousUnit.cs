@@ -11,6 +11,9 @@ public class AutonomousUnit : MonoBehaviour
     private bool isRegrouping = false;
     private float nextCohesionCheckTime = 0f;
 
+    private Vector3 lastTransitionDestination;
+    private float nextTransitionPathRefresh = 0f;
+
     [Header("AI Squad Movement")]
     [SerializeField] private float aiSquadSpacing = 2.2f;
     [SerializeField] private float aiNavMeshSampleRadius = 2.5f;
@@ -72,6 +75,16 @@ public class AutonomousUnit : MonoBehaviour
     {
         if (GameManager.Instance == null) return;
 
+        // Breakthrough transition behaviour is deliberately separate from ordinary objective AI.
+        // Attackers keep fighting through the captured sector, then gather at the closed frontline.
+        // Defenders are left alone here because GameManager has already given them a direct retreat order.
+        if (GameManager.Instance.isTransitioningSector && isAttacker)
+        {
+            UpdateAttackerTransitionMovement();
+            CheckSectorBounds();
+            return;
+        }
+
         bool useStrategicAI = ControlModeManager.Instance == null || ControlModeManager.Instance.ShouldUseStrategicAI(gameObject);
 
         if (!hasDirectOrder && useStrategicAI)
@@ -125,6 +138,34 @@ public class AutonomousUnit : MonoBehaviour
     void LateUpdate()
     {
         AnimateMovement();
+    }
+
+    private void UpdateAttackerTransitionMovement()
+    {
+        if (agent == null) agent = GetComponent<NavMeshAgent>();
+        if (agent == null || !agent.enabled || !agent.isOnNavMesh) return;
+        if (GameManager.Instance == null) return;
+
+        if (!GameManager.Instance.TryGetAttackerTransitionDestination(gameObject, out Vector3 desired))
+        {
+            return;
+        }
+
+        if (NavMesh.SamplePosition(desired, out NavMeshHit hit, 3f, NavMesh.AllAreas))
+        {
+            desired = hit.position;
+        }
+
+        bool destinationChanged = (desired - lastTransitionDestination).sqrMagnitude > 0.25f;
+        if (destinationChanged || Time.time >= nextTransitionPathRefresh)
+        {
+            lastTransitionDestination = desired;
+            nextTransitionPathRefresh = Time.time + 0.25f;
+            currentObjective = null;
+            isRegrouping = false;
+            hasDirectOrder = false;
+            agent.SetDestination(desired);
+        }
     }
 
     private void AnimateMovement()
@@ -438,12 +479,22 @@ public class AutonomousUnit : MonoBehaviour
 
         if (GameManager.Instance.isTransitioningSector)
         {
-            // During the retreat/pursuit window both sides may use the just-secured sector and
-            // the next sector. This lets defenders physically withdraw while attackers push up.
-            int nextIndex = Mathf.Min(activeIndex + 1, GameManager.Instance.sectors.Length - 1);
-            for (int i = activeIndex; i <= nextIndex; i++)
+            if (isAttacker)
             {
-                EncapsulateSectorBounds(i, ref allowedBounds, ref foundBounds);
+                // The newly captured sector remains the attacker's entire legal area until the
+                // countdown ends. They may clear it and assemble at the front, but cannot enter
+                // the next sector early.
+                EncapsulateSectorBounds(activeIndex, ref allowedBounds, ref foundBounds);
+            }
+            else
+            {
+                // Retreating defenders need access to both the lost sector and the next defensive
+                // sector so they can physically withdraw rather than being teleported.
+                int nextIndex = Mathf.Min(activeIndex + 1, GameManager.Instance.sectors.Length - 1);
+                for (int i = activeIndex; i <= nextIndex; i++)
+                {
+                    EncapsulateSectorBounds(i, ref allowedBounds, ref foundBounds);
+                }
             }
 
             return foundBounds;
@@ -451,8 +502,6 @@ public class AutonomousUnit : MonoBehaviour
 
         if (isAttacker)
         {
-            // Attackers retain access to ground already captured, plus the currently contested
-            // sector. Their legal area therefore grows as the frontline advances.
             for (int i = 0; i <= activeIndex; i++)
             {
                 EncapsulateSectorBounds(i, ref allowedBounds, ref foundBounds);
@@ -460,8 +509,6 @@ public class AutonomousUnit : MonoBehaviour
         }
         else
         {
-            // Defenders may occupy only the active defensive sector once the transition is over.
-            // Previous sectors are now behind the frontline and therefore out of bounds.
             EncapsulateSectorBounds(activeIndex, ref allowedBounds, ref foundBounds);
         }
 
@@ -502,8 +549,6 @@ public class AutonomousUnit : MonoBehaviour
 
         if (agent != null && agent.enabled && agent.isOnNavMesh)
         {
-            // Prefer a valid nearby NavMesh point to avoid warping a unit onto non-walkable
-            // geometry at a rectangular bounds edge.
             if (NavMesh.SamplePosition(clampedPos, out NavMeshHit hit, 3f, NavMesh.AllAreas))
             {
                 clampedPos = hit.position;
