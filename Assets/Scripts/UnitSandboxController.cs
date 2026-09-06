@@ -24,6 +24,10 @@ public sealed class UnitSandboxController : MonoBehaviour
     public Vector3 attackerVehicleSpawn = new Vector3(-4f, 0f, 3f);
     public Vector3 defenderVehicleSpawn = new Vector3(4f, 0f, 3f);
 
+    [Header("Sandbox Placement")]
+    [Tooltip("Small clearance above the sandbox floor after renderer-based placement.")]
+    [SerializeField] private float groundClearance = 0.02f;
+
     [Header("Sandbox Camera")]
     [SerializeField] private float panSpeed = 12f;
     [SerializeField] private float scrollZoomSpeed = 0.035f;
@@ -97,7 +101,7 @@ public sealed class UnitSandboxController : MonoBehaviour
         }
 
         Vector3 position = basePosition + RandomSpawnOffset(1.5f);
-        GameObject unit = Instantiate(prefab, position, Quaternion.identity);
+        GameObject unit = InstantiateSandboxPrefab(prefab, position, Quaternion.identity);
         unit.name = $"Sandbox_{factionTag}_{unitClass}";
         unit.tag = factionTag;
 
@@ -110,7 +114,7 @@ public sealed class UnitSandboxController : MonoBehaviour
         }
 
         DisableAutonomousMovement(unit);
-        PlaceOnGround(unit, 0f);
+        PlaceVisualsOnGround(unit, 0f);
         spawnedObjects.Add(unit);
     }
 
@@ -122,13 +126,13 @@ public sealed class UnitSandboxController : MonoBehaviour
             return;
         }
 
-        GameObject vehicle = Instantiate(prefab, basePosition + RandomSpawnOffset(1.2f), Quaternion.identity);
+        GameObject vehicle = InstantiateSandboxPrefab(prefab, basePosition + RandomSpawnOffset(1.2f), Quaternion.identity);
         vehicle.name = $"Sandbox_{factionTag}_Tank";
         vehicle.tag = factionTag;
         UnitCategoryIdentity.Ensure(vehicle, UnitCategory.Vehicle);
 
         DisableAutonomousMovement(vehicle);
-        PlaceOnGround(vehicle, 0f);
+        PlaceVisualsOnGround(vehicle, 0f);
 
         if (recolorForDefender)
         {
@@ -136,6 +140,24 @@ public sealed class UnitSandboxController : MonoBehaviour
         }
 
         spawnedObjects.Add(vehicle);
+    }
+
+    private static GameObject InstantiateSandboxPrefab(GameObject prefab, Vector3 position, Quaternion rotation)
+    {
+        // The gameplay prefabs contain enabled NavMeshAgents. Instantiating them enabled in a
+        // scene with deliberately no NavMesh makes Unity emit an error before the sandbox can
+        // disable the agent. Temporarily disable the prefab's agent for the clone operation.
+        NavMeshAgent prefabAgent = prefab.GetComponent<NavMeshAgent>();
+        bool restoreAgent = prefabAgent != null && prefabAgent.enabled;
+
+        if (restoreAgent) prefabAgent.enabled = false;
+        GameObject instance = Object.Instantiate(prefab, position, rotation);
+        if (restoreAgent) prefabAgent.enabled = true;
+
+        NavMeshAgent instanceAgent = instance.GetComponent<NavMeshAgent>();
+        if (instanceAgent != null) instanceAgent.enabled = false;
+
+        return instance;
     }
 
     private void SpawnVehicleTarget(string factionTag, Vector3 position)
@@ -193,30 +215,35 @@ public sealed class UnitSandboxController : MonoBehaviour
         if (agent != null && agent.enabled) agent.enabled = false;
     }
 
-    private static void PlaceOnGround(GameObject root, float groundY)
+    private void PlaceVisualsOnGround(GameObject root, float groundY)
     {
-        Collider[] colliders = root.GetComponentsInChildren<Collider>(true);
+        Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
         bool foundBounds = false;
         Bounds bounds = default;
 
-        foreach (Collider collider in colliders)
+        foreach (Renderer renderer in renderers)
         {
-            if (collider == null || !collider.enabled || collider.isTrigger) continue;
+            if (renderer == null || !renderer.enabled) continue;
+
+            // Ignore world-space UI such as health bars/class labels. They should not affect
+            // the physical ground placement of the unit model.
+            if (renderer.GetComponentInParent<Canvas>() != null) continue;
+            if (renderer is TrailRenderer || renderer is LineRenderer) continue;
 
             if (!foundBounds)
             {
-                bounds = collider.bounds;
+                bounds = renderer.bounds;
                 foundBounds = true;
             }
             else
             {
-                bounds.Encapsulate(collider.bounds);
+                bounds.Encapsulate(renderer.bounds);
             }
         }
 
         if (!foundBounds) return;
 
-        float lift = groundY - bounds.min.y;
+        float lift = (groundY + groundClearance) - bounds.min.y;
         root.transform.position += Vector3.up * lift;
     }
 
