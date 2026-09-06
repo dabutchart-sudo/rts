@@ -421,52 +421,103 @@ public class AutonomousUnit : MonoBehaviour
 
     private bool IsPositionWithinActiveBounds(Vector3 pos)
     {
-        if (GameManager.Instance == null || GameManager.Instance.sectors == null) return true;
+        return !TryGetAllowedCombatBounds(out Bounds allowedBounds) || allowedBounds.Contains(pos);
+    }
 
-        if (GameManager.Instance.isTransitioningSector) return true;
+    private bool TryGetAllowedCombatBounds(out Bounds allowedBounds)
+    {
+        allowedBounds = default;
 
-        int activeIndex = GameManager.Instance.currentSectorIndex;
-        if (activeIndex >= 0 && activeIndex < GameManager.Instance.sectors.Length)
+        if (GameManager.Instance == null || GameManager.Instance.sectors == null || GameManager.Instance.sectors.Length == 0)
         {
-            Sector activeSector = GameManager.Instance.sectors[activeIndex];
-            if (activeSector.sectorBounds.size.sqrMagnitude > 0.01f)
+            return false;
+        }
+
+        int activeIndex = Mathf.Clamp(GameManager.Instance.currentSectorIndex, 0, GameManager.Instance.sectors.Length - 1);
+        bool foundBounds = false;
+
+        if (GameManager.Instance.isTransitioningSector)
+        {
+            // During the retreat/pursuit window both sides may use the just-secured sector and
+            // the next sector. This lets defenders physically withdraw while attackers push up.
+            int nextIndex = Mathf.Min(activeIndex + 1, GameManager.Instance.sectors.Length - 1);
+            for (int i = activeIndex; i <= nextIndex; i++)
             {
-                return activeSector.sectorBounds.Contains(pos);
+                EncapsulateSectorBounds(i, ref allowedBounds, ref foundBounds);
+            }
+
+            return foundBounds;
+        }
+
+        if (isAttacker)
+        {
+            // Attackers retain access to ground already captured, plus the currently contested
+            // sector. Their legal area therefore grows as the frontline advances.
+            for (int i = 0; i <= activeIndex; i++)
+            {
+                EncapsulateSectorBounds(i, ref allowedBounds, ref foundBounds);
             }
         }
-        return true;
+        else
+        {
+            // Defenders may occupy only the active defensive sector once the transition is over.
+            // Previous sectors are now behind the frontline and therefore out of bounds.
+            EncapsulateSectorBounds(activeIndex, ref allowedBounds, ref foundBounds);
+        }
+
+        return foundBounds;
+    }
+
+    private static void EncapsulateSectorBounds(int sectorIndex, ref Bounds combinedBounds, ref bool foundBounds)
+    {
+        if (GameManager.Instance == null || GameManager.Instance.sectors == null) return;
+        if (sectorIndex < 0 || sectorIndex >= GameManager.Instance.sectors.Length) return;
+
+        Sector sector = GameManager.Instance.sectors[sectorIndex];
+        if (sector == null || sector.sectorBounds.size.sqrMagnitude <= 0.01f) return;
+
+        if (!foundBounds)
+        {
+            combinedBounds = sector.sectorBounds;
+            foundBounds = true;
+        }
+        else
+        {
+            combinedBounds.Encapsulate(sector.sectorBounds.min);
+            combinedBounds.Encapsulate(sector.sectorBounds.max);
+        }
     }
 
     private void CheckSectorBounds()
     {
-        if (GameManager.Instance == null || GameManager.Instance.sectors == null) return;
+        if (!TryGetAllowedCombatBounds(out Bounds allowedBounds)) return;
+        if (allowedBounds.Contains(transform.position)) return;
 
-        if (GameManager.Instance.isTransitioningSector) return;
+        Vector3 clampedPos = allowedBounds.ClosestPoint(transform.position);
 
-        int activeIndex = GameManager.Instance.currentSectorIndex;
-        if (activeIndex < 0 || activeIndex >= GameManager.Instance.sectors.Length) return;
-
-        Sector activeSector = GameManager.Instance.sectors[activeIndex];
-
-        if (activeSector.sectorBounds.size.sqrMagnitude > 0.01f)
+        if (agent == null)
         {
-            if (!activeSector.sectorBounds.Contains(transform.position))
-            {
-                Vector3 clampedPos = activeSector.sectorBounds.ClosestPoint(transform.position);
+            agent = GetComponent<NavMeshAgent>();
+        }
 
-                if (agent.enabled)
-                {
-                    agent.Warp(clampedPos);
-                    if (currentObjective != null && agent.isOnNavMesh)
-                    {
-                        agent.SetDestination(GetStrategicDestination(currentObjective));
-                    }
-                }
-                else
-                {
-                    transform.position = clampedPos;
-                }
+        if (agent != null && agent.enabled && agent.isOnNavMesh)
+        {
+            // Prefer a valid nearby NavMesh point to avoid warping a unit onto non-walkable
+            // geometry at a rectangular bounds edge.
+            if (NavMesh.SamplePosition(clampedPos, out NavMeshHit hit, 3f, NavMesh.AllAreas))
+            {
+                clampedPos = hit.position;
             }
+
+            agent.Warp(clampedPos);
+            if (currentObjective != null && agent.isOnNavMesh)
+            {
+                agent.SetDestination(GetStrategicDestination(currentObjective));
+            }
+        }
+        else
+        {
+            transform.position = clampedPos;
         }
     }
 }
