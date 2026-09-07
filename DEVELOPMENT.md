@@ -1,6 +1,6 @@
 # RTS Development Roadmap
 
-_Last updated: 6 September 2026_
+_Last updated: 7 September 2026_
 
 ## Purpose
 
@@ -60,6 +60,8 @@ The project currently supports two battlefield scenes selected through a Bootstr
 - **ChatGPT Map** — internal scene `GreyboxBattlefield01`.
 
 Shared gameplay systems are supplied through `GameplaySystems.prefab`, and `BattlefieldRuntimeLauncher` provides the common runtime startup path.
+
+A project-specific Unity CLI diagnostic layer is now available through the experimental Unity Pipeline package. It gives the development workflow a read-only way to ask the live Unity Editor about scene state without relying on scene-YAML inspection. Initial commands include `rts_status`, `rts_scene_summary`, `rts_materials`, and `rts_objectives`.
 
 The current development branch is `feature/map-selector-recovery-v2`.
 
@@ -289,6 +291,10 @@ Known caveat: the attacker reaches a full 16-Assault roster only when sufficient
 - Assault, Engineer, Recon, Support and Tank duel choices.
 - Per-side Destructible / Invulnerable controls.
 - Sandbox camera controls.
+- Unity CLI connected successfully to the live Editor through `com.unity.pipeline`.
+- Live read-only inspection verified for active scene, ground materials/colours, Kenney material assignments, scene roots, components and objective state.
+- Project-specific read-only CLI commands accepted in Unity: `rts_status`, `rts_scene_summary`, `rts_materials`, and `rts_objectives`.
+- CLI is intended to grow only when a concrete debugging/testing need justifies a new command, rather than becoming an infrastructure project of its own.
 
 ## Camera & General Runtime
 
@@ -321,6 +327,7 @@ These are known imperfections that do not currently justify derailing the roadma
 
 - Review potential undefined `Projectile` tag usage in Engineer-related logic.
 - AI Commander currently has a separate passive `aiCommandXP` concept from GameManager XP; unify later.
+- `RecoveredDevelopmentMap` currently exposes two `AICommander` components on the live `GameManager`; inspect whether this is intentional before any cleanup.
 - Remove remaining old BattleBlocks/recovered-menu objects and code once no longer useful for recovery safety.
 - Review stale shared-prefab builder/helper language after architectural cleanup.
 
@@ -367,12 +374,15 @@ Ideas live here specifically so they can be remembered **without becoming today'
 - AI/player orders should converge on the same underlying order APIs where possible.
 - NavMesh handles local navigation; higher-level tactical systems decide intent/routes.
 - Avoid hand-editing large Unity scene YAML when a safer editor/runtime approach exists.
+- Prefer Unity CLI read-only inspection where it can answer a live Editor question more safely and cheaply than reverse-engineering serialized scene state.
+- Project-specific CLI commands should remain narrowly scoped, diagnostic-first and safe to run against the live Editor.
 
 ## Development Rhythm
 
 - Aim for roughly one visible/testable improvement per development session.
 - Heavy architecture work should periodically be followed by a fun or visually rewarding task.
 - Use the Unit Sandbox when normal-match setup creates unnecessary testing ceremony.
+- Use Unity CLI diagnostics when they reduce Inspector ceremony or scene-file archaeology, but do not build tooling without a concrete need.
 - AI-vs-AI observation is a legitimate first-class testing and gameplay experience, not merely a debug fallback.
 
 ---
