@@ -16,7 +16,12 @@ public static class OriginalMapWorldGridPreviewCli
 {
     private const string RequiredSceneName = "RecoveredDevelopmentMap";
     private const string MaterialPrefix = "OriginalMap_Kenney_";
-    private const float GridCellWorldSize = 2.5f;
+
+    // The first preview used 2.5 world units per grid cell. That produced roughly four
+    // cells across the reference wall where the Godot reference shows about eight.
+    // Halving the cell size doubles the visible grid density while preserving square,
+    // world-consistent cells on differently scaled props.
+    private const float GridCellWorldSize = 1.25f;
 
     [CliCommand(
         "rts_preview_world_grid",
