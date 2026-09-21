@@ -75,7 +75,7 @@ The current prototype includes health, projectile combat, target acquisition, ra
 
 The long-term roster may include specialist infantry such as assault, engineer, sniper, anti-tank, and anti-air roles, plus vehicles such as tanks and aircraft. Possible commander abilities include UAV reconnaissance, bombing runs, gunboat support, morale boosts, cruise missiles, and supply drops.
 
-These are **design candidates**, not promises of current implementation. Each needs a scoped issue and acceptance criteria before development.
+These are **design candidates**, not promises of current implementation. Each needs a scoped Linear issue and acceptance criteria before development.
 
 ## Maps and environment
 

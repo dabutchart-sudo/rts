@@ -97,13 +97,14 @@ A task is done when:
 - affected gameplay is tested in Play mode;
 - scene, prefab, and `.meta` changes are intentional;
 - any new setup step is documented;
-- the linked issue is updated and the pull request references it;
+- the linked Linear issue is updated and the pull request references it;
 - DESIGN.md or DEVELOPMENT.md is updated when the decision or roadmap changed.
 
 ## Working rhythm
 
-- Use GitHub issues for epics, tasks, bugs, and experiments.
-- Use an RTS GitHub Project for current status, priority, and views.
-- Keep only actionable work in Ready or In Progress.
-- Close tasks when verified, not merely when code is written.
+- Use Linear issues in the Breakthrough RTS project for epics, tasks, bugs, and experiments: https://linear.app/dabutchart/project/breakthrough-rts-b9dab6728624
+- Use that Linear project for current status, priority, and views.
+- Keep only actionable work in Todo or In Progress.
+- Mark tasks Done when verified, not merely when code is written.
+- Keep pull requests on GitHub, and reference the Linear issue from the pull request.
 - Review this roadmap after each milestone or material design change.
