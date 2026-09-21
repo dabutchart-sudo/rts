@@ -87,7 +87,9 @@ Evaluate specialist roles, vehicles, commander abilities, fortifications, buildi
 
 This is a look check, not a match.
 
-1. In Unity 6000.5.7f1, open `Assets/Scenes/Chapter1MarketPreview.unity`. Leave `SampleScene` as the playable map.
+The preview is not on `main`. Unity only shows it after the project is on branch `dabutchart/dab-148-ch11-recipe-window-and-first-market-district`. Closing and reopening Unity does not download that branch.
+
+1. Switch to that branch, then in Unity 6000.5.7f1 use **RTS → Maps → Open Chapter 1 Market Preview**, or double-click `Assets/Scenes/Chapter1MarketPreview.unity`. Leave `SampleScene` as the playable map. It is still the first scene in Build Settings.
 2. In the Hierarchy, select `GeneratedMap` and press F to frame it.
 3. You should see a warm plaza, orange shop blocks, stall canopies over counters, parasols, a small kiosk on the east side, and two flags in the open courtyard.
 4. Press Play to look around. WASD or the arrow keys slide the camera. Q and E, or the scroll wheel, zoom. No match starts.

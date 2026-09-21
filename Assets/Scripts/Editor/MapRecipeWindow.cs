@@ -1,9 +1,27 @@
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 
 public class MapRecipeWindow : EditorWindow
 {
     MapRecipe recipe;
+
+    [MenuItem("RTS/Maps/Open Chapter 1 Market Preview", false, 0)]
+    public static void OpenChapter1MarketPreview()
+    {
+        SceneAsset scene = AssetDatabase.LoadAssetAtPath<SceneAsset>(MapRecipeStamper.PreviewScenePath);
+        if (scene == null)
+        {
+            EditorUtility.DisplayDialog(
+                "Market preview is not in this project",
+                "Chapter1MarketPreview is not on the branch Unity has open. Switch the rts project to dabutchart/dab-148-ch11-recipe-window-and-first-market-district, then try this menu again.",
+                "OK");
+            return;
+        }
+
+        if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
+        EditorSceneManager.OpenScene(MapRecipeStamper.PreviewScenePath, OpenSceneMode.Single);
+    }
 
     [MenuItem("RTS/Maps/Recipe Window", false, 1)]
     public static void Open()
