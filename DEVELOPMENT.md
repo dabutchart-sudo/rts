@@ -7,6 +7,7 @@
 - Input: Unity Input System
 - Navigation: AI Navigation / NavMesh
 - Main scene: `Assets/Scenes/SampleScene.unity`
+- Market look-dev scene: `Assets/Scenes/Chapter1MarketPreview.unity` (not in the build list)
 - Main branch: `main`
 
 The repository contains a playable prototype, but it has not yet passed a documented end-to-end vertical-slice acceptance test.
@@ -27,12 +28,15 @@ The repository contains a playable prototype, but it has not yet passed a docume
 - XP pools, unit store UI, base ownership, and AI purchasing;
 - capture, ticket, XP, victory, and transition UI;
 - AI diagnostics, match balance logging, screenshots, and accelerated batch-test support.
+- A Map Recipe asset and an editor stamp (`RTS → Maps`) that builds a `GeneratedMap` root from sectors, courtyard-flag counts, and districts.
+- One Kenney City Kit (Commercial) Market district in the preview scene: plaza, orange shop blocks, stall canopies, parasols, a small kiosk, and two courtyard flags. Kenney blocks are scaled by the recipe `visualScale` (8) so they read from the RTS camera. Orange comes from Kenney variation B. Flags are markers only.
 
 ## Known gaps and risks
 
 - Defender ticket spending currently needs validation; the code does not appear to reduce the defender pool.
 - The full match loop, all control modes, spawning, and sector transitions need repeatable play-mode verification.
 - The single main scene and several map-related feature branches need consolidation.
+- The Market preview is not a playable Breakthrough map. SampleScene is still the match. Ground, roads, the other districts, NavMesh, and capture wiring are later chapter work.
 - Some systems are runtime-created or loosely coupled; scene and prefab references may fail silently.
 - Balance values are prototype values, not release decisions.
 - Desktop mouse input exists; touch/mobile interaction is not complete.
@@ -78,6 +82,19 @@ Improve onboarding, camera and input, HUD hierarchy, purchase flow, alerts, paus
 ### M6 — Expand only after the slice is solid
 
 Evaluate specialist roles, vehicles, commander abilities, fortifications, buildings, additional maps, audio/TTS, and visual polish as individually scoped features.
+
+## Looking at the Market preview
+
+This is a look check, not a match.
+
+1. In Unity 6000.5.7f1, open `Assets/Scenes/Chapter1MarketPreview.unity`. Leave `SampleScene` as the playable map.
+2. In the Hierarchy, select `GeneratedMap` and press F to frame it.
+3. You should see a warm plaza, orange shop blocks, stall canopies over counters, parasols, a small kiosk on the east side, and two flags in the open courtyard.
+4. Press Play to look around. WASD or the arrow keys slide the camera. Q and E, or the scroll wheel, zoom. No match starts.
+5. To rebuild from the recipe, use **RTS → Maps → Recipe Window** or **RTS → Maps → Stamp Chapter 1 Market Preview**. Stamping replaces only `GeneratedMap`.
+6. If a Kenney model is missing after the first import, run that stamp command once and save the scene. Unity then links the imported models.
+
+The recipe asset is `Assets/Data/MapRecipes/Chapter1Market.asset`. Change sectors, flag counts, or `visualScale` there, then stamp again.
 
 ## Immediate queue
 
