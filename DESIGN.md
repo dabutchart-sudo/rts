@@ -79,7 +79,9 @@ These are **design candidates**, not promises of current implementation. Each ne
 
 ## Maps and environment
 
-Maps should make the sector flow visually obvious and offer meaningful lanes, cover, defensible positions, and flanking routes. Future candidates include fortifications, enterable buildings, and destructible or interactive cover. The current repository contains a single primary Unity scene and greybox/map work on feature branches.
+Maps should make the sector flow visually obvious and offer meaningful lanes, cover, defensible positions, and flanking routes. Future candidates include fortifications, enterable buildings, and destructible or interactive cover.
+
+The playable match stays on `SampleScene`. A separate recipe can stamp a preview scene without replacing that original map. The first preview is one Market district (plaza, stalls, shops, courtyard flags). It is a look check, not a wired Breakthrough sector. Farm, Industrial, Airport, Kenney ground and roads, and capture wiring are later work.
 
 ## Interface and accessibility
 
