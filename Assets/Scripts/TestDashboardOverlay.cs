@@ -160,7 +160,7 @@ public class TestDashboardOverlay : MonoBehaviour
 
     private void CreateOverlayUI()
     {
-        var gameplayCanvas = GameObject.Find("Canvas_Gameplay");
+        Canvas gameplayCanvas = FindMatchCanvas();
         if (gameplayCanvas == null) return;
 
         Transform existing = gameplayCanvas.transform.Find("TestDashboardPanel");
@@ -216,5 +216,19 @@ public class TestDashboardOverlay : MonoBehaviour
             Gizmos.DrawSphere(m.position + Vector3.up * 0.2f, 0.6f);
             Gizmos.DrawWireSphere(m.position + Vector3.up * 0.2f, 0.8f);
         }
+    }
+
+    private static Canvas FindMatchCanvas()
+    {
+        Canvas fallback = null;
+        Canvas[] canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Include);
+        foreach (Canvas canvas in canvases)
+        {
+            if (canvas == null) continue;
+            if (canvas.gameObject.name == "Canvas_Gameplay") return canvas;
+            if (canvas.gameObject.name == "Canvas") fallback = canvas;
+        }
+
+        return fallback;
     }
 }

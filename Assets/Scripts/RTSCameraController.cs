@@ -12,7 +12,7 @@ public class RTSCameraController : MonoBehaviour
 
     void Update()
     {
-        if (GameManager.Instance == null || GameManager.Instance.playerFaction == Faction.None) return;
+        if (!MapSession.allowLookAround && (GameManager.Instance == null || GameManager.Instance.playerFaction == Faction.None)) return;
 
         // 1. Pan with WASD or Arrow Keys
         float xInput = Input.GetAxis("Horizontal"); // A/D

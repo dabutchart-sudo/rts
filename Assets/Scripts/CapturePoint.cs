@@ -22,6 +22,7 @@ public class CapturePoint : MonoBehaviour
     [Range(-100f, 100f)]
     public float captureProgress = -100f; 
     public float captureSpeed = 15f;
+    [Range(0.1f, 2f)] public float captureRateMultiplier = 0.33f;
     public float maxCaptureMultiplier = 4f;
 
     [Header("Current Occupants")]
@@ -167,8 +168,9 @@ public class CapturePoint : MonoBehaviour
             float advantage = Mathf.Abs(balance);
             float currentMultiplier = Mathf.Min(advantage, maxCaptureMultiplier);
             float direction = Mathf.Sign(balance);
-            
-            captureProgress += direction * currentMultiplier * captureSpeed * Time.deltaTime;
+            float effectiveCaptureSpeed = captureSpeed * Mathf.Max(0f, captureRateMultiplier);
+
+            captureProgress += direction * currentMultiplier * effectiveCaptureSpeed * Time.deltaTime;
             captureProgress = Mathf.Clamp(captureProgress, -100f, 100f);
             
             UpdatePointColor();
@@ -217,11 +219,20 @@ public class CapturePoint : MonoBehaviour
 
     // --- VISUAL UPDATES ---
 
-    void UpdatePointColor() { 
+    void UpdatePointColor() {
         if (pointRenderer == null) return;
-        if (captureProgress > 0) pointRenderer.material.color = Color.Lerp(neutralColor, attackerColor, captureProgress / 100f);
-        else if (captureProgress < 0) pointRenderer.material.color = Color.Lerp(neutralColor, defenderColor, Mathf.Abs(captureProgress) / 100f);
-        else pointRenderer.material.color = neutralColor;
+        Color next = neutralColor;
+        if (captureProgress > 0) next = Color.Lerp(neutralColor, attackerColor, captureProgress / 100f);
+        else if (captureProgress < 0) next = Color.Lerp(neutralColor, defenderColor, Mathf.Abs(captureProgress) / 100f);
+        ApplyRendererColor(next);
+    }
+
+    void ApplyRendererColor(Color color)
+    {
+        Material material = pointRenderer.material;
+        if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
+        if (material.HasProperty("_Color")) material.SetColor("_Color", color);
+        material.color = color;
     }
 
     void UpdateFloatingText() { 

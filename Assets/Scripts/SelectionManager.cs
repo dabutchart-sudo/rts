@@ -49,14 +49,36 @@ public class SelectionManager : MonoBehaviour
         else Destroy(gameObject);
     }
 
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+    private static void EnsureInstanceExists()
+    {
+        if (Instance != null) return;
+        SelectionManager existing = FindAnyObjectByType<SelectionManager>(FindObjectsInactive.Include);
+        if (existing != null)
+        {
+            Instance = existing;
+            return;
+        }
+
+        GameObject host = new GameObject("SelectionManager");
+        host.AddComponent<SelectionManager>();
+    }
+
     void Start()
     {
+        if (selectionBox == null) selectionBox = CreateSelectionBox();
         if (selectionBox != null)
         {
             parentCanvas = selectionBox.GetComponentInParent<Canvas>();
             Image boxImage = selectionBox.GetComponent<Image>();
             if (boxImage != null) boxImage.enabled = true;
             selectionBox.gameObject.SetActive(false);
+        }
+
+        SelectableUnit[] existingUnits = FindObjectsByType<SelectableUnit>(FindObjectsInactive.Exclude);
+        foreach (SelectableUnit unit in existingUnits)
+        {
+            if (unit != null && !allUnits.Contains(unit)) allUnits.Add(unit);
         }
 
         if (ControlModeManager.Instance != null)
@@ -328,7 +350,7 @@ public class SelectionManager : MonoBehaviour
         }
     }
 
-    void ClearSelection()
+    public void ClearSelection()
     {
         foreach (SelectableUnit unit in selectedUnits)
         {
@@ -406,6 +428,35 @@ public class SelectionManager : MonoBehaviour
         }
 
         Debug.Log($"FORMATION MOVE: {validUnits.Count} units ordered in a {rows}x{columns} formation with {formationSpacing:0.0}m spacing.");
+    }
+
+    RectTransform CreateSelectionBox()
+    {
+        Canvas canvas = null;
+        Canvas[] canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Include);
+        foreach (Canvas candidate in canvases)
+        {
+            if (candidate != null && (candidate.gameObject.name == "Canvas" || candidate.gameObject.name == "Canvas_Gameplay"))
+            {
+                canvas = candidate;
+                break;
+            }
+        }
+
+        if (canvas == null) return null;
+
+        GameObject box = new GameObject("SelectionBox", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        box.transform.SetParent(canvas.transform, false);
+        Image image = box.GetComponent<Image>();
+        image.color = new Color(0.2f, 0.75f, 1f, 0.25f);
+        image.raycastTarget = false;
+        RectTransform rect = box.GetComponent<RectTransform>();
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.zero;
+        rect.pivot = Vector2.zero;
+        rect.sizeDelta = Vector2.zero;
+        box.SetActive(false);
+        return rect;
     }
 
     private Vector3 CalculateGroupCenter(List<SelectableUnit> units)

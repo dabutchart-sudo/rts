@@ -23,18 +23,22 @@ The target experience is readable, fast, and satisfying in short sessions, with 
 - Captured sectors lock, the front line advances, defenders retreat, and the next sector opens after an intermission.
 - Attackers win by securing the final sector.
 - Defenders win by exhausting attacker tickets.
-- The player's faction is currently assigned randomly when a match starts.
+- The player chooses Attacker or Defender from the Play menu before the match starts. A match started without that choice still assigns a side at random.
 
 ## Tickets, spawning, and reinforcements
 
 ### Current implementation
 
 - Attackers begin with a configurable ticket pool and lose tickets when units are defeated.
-- Capturing a sector awards attacker tickets.
-- Both factions spawn an initial force.
-- Attackers can respawn after a delay.
-- Defenders receive reinforcement waves.
-- Spawn locations advance with the active sector.
+- Capturing a sector awards attacker tickets as soon as the sector is secured.
+- Both factions spawn an initial assault force, capped at 16 alive troops per side.
+- Survivors stay when a sector changes. Only the missing places are filled. Attacker replacements cost tickets. New attackers appear on a point that side already owns, in the sector they just took. Defenders fill up in the next sector.
+- One attacker squad stays to garrison each point that has been fully taken. The other squads keep moving.
+- Attackers are not moved into the next sector. They clear anyone still in the sector they took, then wait on their side of the line until it opens. They can walk back through sectors they already hold.
+- Defenders retreat on foot into the next sector. They are not removed and dropped there.
+- Points change hands more slowly than the original test pace, so a fight can last long enough to matter.
+- Attackers can respawn after a delay, up to the troop cap.
+- Defenders receive reinforcement waves, also up to the troop cap.
 - Defender ticket depletion is not yet fully enforced and requires validation.
 
 ### Intended direction
@@ -81,7 +85,9 @@ These are **design candidates**, not promises of current implementation. Each ne
 
 Maps should make the sector flow visually obvious and offer meaningful lanes, cover, defensible positions, and flanking routes. Future candidates include fortifications, enterable buildings, and destructible or interactive cover.
 
-The playable match stays on `SampleScene`. A separate recipe can stamp a preview scene without replacing that original map. The first preview is one Market district (plaza, stalls, shops, courtyard flags). It is a look check, not a wired Breakthrough sector. Farm, Industrial, Airport, Kenney ground and roads, and capture wiring are later work.
+Playable maps are chosen from the opening menu before a match starts. That menu has three doors. **Play** asks for Attacker or Defender, then a map, and starts at normal speed so you can command your side. **Test** asks for a speed and how many matches, then a map, and runs those matches on it. **Edit** creates a blank map or opens a saved one. **Original** is the hand-built battlefield in `SampleScene`. It can be played and tested, and it stays as the fallback. It is not editable. Any other map is a saved blank layout: ordered rectangular sectors in one strip, control points inside each sector, and one attacker spawn and one defender spawn per sector. You choose those counts on the editor, the game lays the strip out, and you drag borders, points, and spawns. Changing the counts rebuilds that default layout and keeps the name. Auto centre recentres spawns and control points inside the current sector sizes. A dragged point stays inside its sector. Saving writes a file the menu can open again. After a test, returning to edit stays on that map.
+
+Decoration comes later. Rules will dress a saved layout with ground, roads, and districts without moving the control points or spawns. The Market preview is a look check for that later phase, not a playable Breakthrough map.
 
 ## Interface and accessibility
 

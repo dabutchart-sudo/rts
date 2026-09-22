@@ -1,0 +1,1025 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
+using UnityEngine.UI;
+
+public class MapWorkshop : MonoBehaviour
+{
+    enum Screen
+    {
+        Menu,
+        Create,
+        Edit,
+        SaveName,
+        Playing
+    }
+
+    PlayableMapBuilder builder;
+    GameObject canvasObject;
+    GameObject sidePanel;
+    GameObject postMatchPanel;
+    InputField nameInput;
+    Text statusText;
+    Screen screen = Screen.Menu;
+    MapEditHandle dragHandle;
+
+    string draftName = "Blank Map";
+    int draftSectorCount = 3;
+    readonly List<int> draftPoints = new List<int> { 2, 1, 1 };
+    int queuedTestRuns;
+    static readonly float[] TestSpeeds = { 1f, 2f, 5f, 10f, 20f, 50f };
+
+    void Awake()
+    {
+        Time.timeScale = 1f;
+    }
+
+    IEnumerator Start()
+    {
+        yield return null;
+
+        if (GameManager.Instance == null)
+        {
+            Destroy(gameObject);
+            yield break;
+        }
+
+        PlayableMapBuilder.ForgetHiddenOriginal();
+        builder = new PlayableMapBuilder();
+        HideOldFactionMenu();
+        CreateCanvas();
+        PrepareSession();
+        yield return null;
+        BeginMatchIfNeeded();
+    }
+
+    void Update()
+    {
+        if (MapSession.continueTest && screen == Screen.Playing)
+        {
+            MapSession.continueTest = false;
+            ContinueTestRun();
+            return;
+        }
+
+        if (screen == Screen.Edit) HandleDrag();
+
+        if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
+        {
+            if (screen == Screen.SaveName)
+            {
+                ShowEdit();
+                return;
+            }
+
+            if (screen == Screen.Edit)
+            {
+                ReturnToMenu();
+                return;
+            }
+        }
+
+        if (screen == Screen.Playing && GameManager.Instance != null && GameManager.Instance.IsMatchOver && postMatchPanel == null && !MapSession.continueTest)
+        {
+            ShowPostMatch();
+        }
+    }
+
+    void PrepareSession()
+    {
+        MapSession.allowLookAround = MapSession.phase == MapSession.Phase.Menu || MapSession.phase == MapSession.Phase.Edit;
+
+        if (MapSession.phase == MapSession.Phase.Edit && MapSession.workingCopy != null)
+        {
+            ShowGenerated(editing: true);
+            screen = Screen.Edit;
+            ShowEdit();
+            return;
+        }
+
+        if (MapSession.phase == MapSession.Phase.Play || MapSession.phase == MapSession.Phase.QuickTest)
+        {
+            screen = Screen.Playing;
+            HideSidePanel();
+            if (IsOriginalSelected())
+            {
+                PlayableMapBuilder.RestoreOriginalBattlefield();
+                builder.ClearGenerated();
+                PlayableMapBuilder.LinkOriginal(GameManager.Instance);
+            }
+            else if (MapSession.workingCopy != null)
+            {
+                ShowGenerated(editing: false);
+                builder.BakeNavigation();
+            }
+            else
+            {
+                MapSession.phase = MapSession.Phase.Menu;
+                MapSession.selectedId = MapSession.OriginalId;
+                ShowModeSelect();
+            }
+
+            return;
+        }
+
+        MapSession.phase = MapSession.Phase.Menu;
+        PlayableMapBuilder.RestoreOriginalBattlefield();
+        builder.ClearGenerated();
+        ShowModeSelect();
+    }
+
+    void BeginMatchIfNeeded()
+    {
+        if (screen != Screen.Playing || GameManager.Instance == null) return;
+
+        PlayableMapBuilder.EnsureGameplayLinks(GameManager.Instance);
+        GameManager.Instance.PrepareForRematch();
+
+        if (MapSession.phase == MapSession.Phase.QuickTest)
+        {
+            GameManager.Instance.SetTestSpeed(MapSession.testSpeed);
+            GameManager.Instance.BeginWorkshopTest();
+            SetMatchChrome(showReadout: true, showCommands: false);
+            return;
+        }
+
+        GameManager.Instance.BeginWorkshopPlay(MapSession.chosenFaction);
+        SetMatchChrome(showReadout: true, showCommands: true);
+    }
+
+    void HideOldFactionMenu()
+    {
+        GameManager gameManager = GameManager.Instance;
+        if (gameManager != null && gameManager.factionSelectionUI != null)
+        {
+            gameManager.factionSelectionUI.SetActive(false);
+            return;
+        }
+
+        GameObject oldMenu = GameObject.Find("Canvas_FactionSelect");
+        if (oldMenu != null) oldMenu.SetActive(false);
+    }
+
+    void ShowGenerated(bool editing)
+    {
+        PlayableMapBuilder.HideOriginalBattlefield();
+        builder.Build(MapSession.workingCopy, editing);
+        PlayableMapBuilder.FrameCamera(MapSession.workingCopy.WorldBounds());
+    }
+
+    bool IsOriginalSelected()
+    {
+        return MapSession.selectedId == MapSession.OriginalId;
+    }
+
+    void HandleDrag()
+    {
+        if (Mouse.current == null || Camera.main == null || MapSession.workingCopy == null) return;
+
+        if (Mouse.current.leftButton.wasPressedThisFrame && !PointerOverUi())
+        {
+            dragHandle = PickHandle(Mouse.current.position.ReadValue());
+        }
+
+        if (Mouse.current.leftButton.isPressed && dragHandle != null)
+        {
+            Vector3 world = GroundPoint(Mouse.current.position.ReadValue());
+            ApplyDrag(dragHandle, world);
+        }
+
+        if (Mouse.current.leftButton.wasReleasedThisFrame) dragHandle = null;
+    }
+
+    void ApplyDrag(MapEditHandle handle, Vector3 world)
+    {
+        PlayableMapDefinition map = MapSession.workingCopy;
+        switch (handle.kind)
+        {
+            case MapEditHandle.Kind.WidthMin:
+                map.MoveWidthEdge(true, world.x);
+                break;
+            case MapEditHandle.Kind.WidthMax:
+                map.MoveWidthEdge(false, world.x);
+                break;
+            case MapEditHandle.Kind.DepthEdge:
+                map.MoveDepthEdge(handle.depthEdgeIndex, world.z);
+                break;
+            case MapEditHandle.Kind.ControlPoint:
+                map.sectors[handle.sectorIndex].controlPoints[handle.pointIndex] = map.ClampInside(handle.sectorIndex, world);
+                break;
+            case MapEditHandle.Kind.AttackerSpawn:
+                map.sectors[handle.sectorIndex].attackerSpawn = map.ClampInside(handle.sectorIndex, world);
+                break;
+            case MapEditHandle.Kind.DefenderSpawn:
+                map.sectors[handle.sectorIndex].defenderSpawn = map.ClampInside(handle.sectorIndex, world);
+                break;
+        }
+
+        MapSession.workingCopyDirty = true;
+        builder.Sync();
+    }
+
+    MapEditHandle PickHandle(Vector2 screenPosition)
+    {
+        Ray ray = Camera.main.ScreenPointToRay(screenPosition);
+        RaycastHit[] hits = Physics.RaycastAll(ray, 800f);
+        float best = float.MaxValue;
+        MapEditHandle found = null;
+        foreach (RaycastHit hit in hits)
+        {
+            MapEditHandle handle = hit.collider.GetComponentInParent<MapEditHandle>();
+            if (handle != null && hit.distance < best)
+            {
+                best = hit.distance;
+                found = handle;
+            }
+        }
+
+        return found;
+    }
+
+    Vector3 GroundPoint(Vector2 screenPosition)
+    {
+        Ray ray = Camera.main.ScreenPointToRay(screenPosition);
+        Plane plane = new Plane(Vector3.up, Vector3.zero);
+        if (plane.Raycast(ray, out float distance)) return ray.GetPoint(distance);
+        return Vector3.zero;
+    }
+
+    bool PointerOverUi()
+    {
+        if (EventSystem.current == null || Mouse.current == null) return false;
+        return EventSystem.current.IsPointerOverGameObject(Mouse.current.deviceId);
+    }
+
+    void ShowModeSelect()
+    {
+        screen = Screen.Menu;
+        MapSession.phase = MapSession.Phase.Menu;
+        MapSession.allowLookAround = true;
+        Time.timeScale = 1f;
+        SetMatchChrome(showReadout: false, showCommands: false);
+        ClearSidePanel();
+        AddTitle("Breakthrough");
+        AddBody("Play a match as the side you choose, run a sped-up test, or edit a map.");
+        var row = AddRow();
+        AddButton(row.transform, "Play", ShowPlayFaction);
+        AddButton(row.transform, "Test", ShowTestSetup);
+        row = AddRow();
+        AddButton(row.transform, "Edit", ShowEditPick);
+        statusText = AddBody("");
+    }
+
+    void ShowPlayFaction()
+    {
+        screen = Screen.Menu;
+        ClearSidePanel();
+        AddTitle("Play");
+        AddBody("Which side do you want to command? The match starts at normal speed, with tickets and Auto, Assist, and Manual.");
+        var row = AddRow();
+        AddButton(row.transform, "Attacker", () =>
+        {
+            MapSession.chosenFaction = Faction.Attacker;
+            ShowPlayMaps();
+        });
+        AddButton(row.transform, "Defender", () =>
+        {
+            MapSession.chosenFaction = Faction.Defender;
+            ShowPlayMaps();
+        });
+        row = AddRow();
+        AddButton(row.transform, "Back", ShowModeSelect);
+    }
+
+    void ShowPlayMaps()
+    {
+        screen = Screen.Menu;
+        ClearSidePanel();
+        string side = MapSession.chosenFaction == Faction.Defender ? "Defender" : "Attacker";
+        AddTitle("Play as " + side);
+        AddBody("Pick a map. The match starts straight away.");
+        AddPlayableMaps(StartPlayOnMap);
+        var row = AddRow();
+        AddButton(row.transform, "Back", ShowPlayFaction);
+    }
+
+    void ShowTestSetup()
+    {
+        screen = Screen.Menu;
+        ClearSidePanel();
+        AddTitle("Test");
+        AddBody("Choose a speed and how many matches to run, then pick a map. They play themselves, one after another, on that map.");
+        AddSpeedStepper();
+        AddStepper("Matches", MapSession.testRunCount, 1, 20, value =>
+        {
+            MapSession.testRunCount = value;
+            ShowTestSetup();
+        });
+        AddSpacer();
+        AddBody("Map");
+        AddPlayableMaps(StartTestOnMap);
+        var row = AddRow();
+        AddButton(row.transform, "Back", ShowModeSelect);
+    }
+
+    void ShowEditPick()
+    {
+        screen = Screen.Menu;
+        ClearSidePanel();
+        AddTitle("Edit");
+        AddBody("Create a blank map, or open one you saved. Original stays as it was built.");
+        var row = AddRow();
+        AddButton(row.transform, "Create new", CreateNewMap);
+        AddSpacer();
+        bool any = false;
+        if (MapSession.workingCopy != null && MapSession.workingCopyDirty)
+        {
+            any = true;
+            AddMapChoice(MapSession.workingCopy.mapName + " (unsaved)", "Still in this session", MapSession.UnsavedId, OpenMapForEdit);
+        }
+
+        foreach (string fileName in PlayableMapDefinition.ListSavedFileNames())
+        {
+            any = true;
+            string label = fileName.EndsWith(".json") ? fileName.Substring(0, fileName.Length - 5) : fileName;
+            AddMapChoice(label, "Saved map", fileName, OpenMapForEdit);
+        }
+
+        if (!any) AddBody("No saved maps yet. Create new starts a blank one.");
+        row = AddRow();
+        AddButton(row.transform, "Back", ShowModeSelect);
+    }
+
+    void CreateNewMap()
+    {
+        draftName = "Blank Map";
+        draftSectorCount = 3;
+        draftPoints.Clear();
+        draftPoints.Add(2);
+        draftPoints.Add(1);
+        draftPoints.Add(1);
+        MapSession.workingCopy = PlayableMapDefinition.CreateBlank(draftName, draftPoints);
+        MapSession.selectedId = MapSession.UnsavedId;
+        MapSession.workingCopyDirty = true;
+        EnterEditMode();
+    }
+
+    void OpenMapForEdit()
+    {
+        if (IsOriginalSelected()) return;
+        if (!LoadSelectionIntoWorkingCopy())
+        {
+            if (statusText != null) statusText.text = "That map could not be opened.";
+            return;
+        }
+
+        EnterEditMode();
+    }
+
+    void ShowEdit()
+    {
+        screen = Screen.Edit;
+        MapSession.phase = MapSession.Phase.Edit;
+        MapSession.allowLookAround = true;
+        SyncDraftFromMap();
+        SetMatchChrome(showReadout: false, showCommands: false);
+        ClearSidePanel();
+        PlayableMapDefinition map = MapSession.workingCopy;
+        AddTitle(map != null ? map.mapName : "Edit map");
+        AddBody("Drag the white borders to resize sectors. Drag a gold point to move a control point, and a red or blue marker to move a spawn. Changing the counts below rebuilds a fresh layout and keeps the name. Save asks you what to call this map. WASD moves the camera. Q and E zoom.");
+        AddStepper("Sectors", draftSectorCount, 1, 6, SetEditSectorCount);
+        for (int i = 0; i < draftSectorCount && i < draftPoints.Count; i++)
+        {
+            int index = i;
+            AddStepper("Sector " + (char)('A' + i) + " points", draftPoints[i], 1, 4, value => SetEditPointCount(index, value));
+        }
+
+        var row = AddRow();
+        AddButton(row.transform, "Auto centre all", CentreAll);
+        row = AddRow();
+        AddButton(row.transform, "Save", ShowNameAndSave);
+        AddButton(row.transform, "Play", PlayWorkingCopy);
+        row = AddRow();
+        AddButton(row.transform, "Quick Test", QuickTestWorkingCopy);
+        AddButton(row.transform, "Main menu", ReturnToMenu);
+        statusText = AddBody(MapSession.workingCopyDirty ? "Unsaved changes." : "Saved maps stay in the menu.");
+    }
+
+    void ShowNameAndSave()
+    {
+        if (MapSession.workingCopy == null) return;
+        screen = Screen.SaveName;
+        string current = string.IsNullOrWhiteSpace(MapSession.workingCopy.mapName) ? "Blank Map" : MapSession.workingCopy.mapName;
+        ClearSidePanel();
+        AddTitle("Save map");
+        AddBody("This name is how you will find the map later, under Edit, Play, and Test. Saving with a name you already used replaces that map. Your dragged layout is kept.");
+        nameInput = AddInput(current);
+        if (nameInput != null) nameInput.ActivateInputField();
+        var row = AddRow();
+        AddButton(row.transform, "Save", ConfirmSaveName);
+        AddButton(row.transform, "Back", ShowEdit);
+        statusText = AddBody("");
+    }
+
+    void ConfirmSaveName()
+    {
+        if (MapSession.workingCopy == null) return;
+        string next = nameInput != null && nameInput.text != null ? nameInput.text.Trim() : "";
+        if (string.IsNullOrEmpty(next))
+        {
+            if (statusText != null) statusText.text = "Type a name first.";
+            return;
+        }
+
+        MapSession.workingCopy.mapName = next;
+        string fileName = MapSession.workingCopy.Save();
+        MapSession.selectedId = fileName;
+        MapSession.workingCopyDirty = false;
+        ShowEdit();
+        if (statusText != null) statusText.text = "Saved as " + next + ". Open it later from Edit.";
+    }
+
+    void EnterEditMode()
+    {
+        MapSession.continueTest = false;
+        MapSession.phase = MapSession.Phase.Edit;
+        MapSession.allowLookAround = true;
+        Time.timeScale = 1f;
+        if (GameManager.Instance != null)
+        {
+            GameManager.Instance.PrepareForRematch();
+            GameManager.Instance.SetAutoTestMode(false);
+        }
+
+        ShowGenerated(true);
+        ShowEdit();
+    }
+
+    void StartPlayOnMap()
+    {
+        if (!PrepareSelectedMap()) return;
+        queuedTestRuns = 0;
+        StartMatch(quickTest: false);
+    }
+
+    void StartTestOnMap()
+    {
+        if (!PrepareSelectedMap()) return;
+        queuedTestRuns = Mathf.Max(1, MapSession.testRunCount);
+        StartMatch(quickTest: true);
+    }
+
+    bool PrepareSelectedMap()
+    {
+        if (IsOriginalSelected()) return true;
+        if (LoadSelectionIntoWorkingCopy()) return true;
+        if (statusText != null) statusText.text = "Choose a map first.";
+        return false;
+    }
+
+    void PlayWorkingCopy()
+    {
+        CommitName();
+        if (MapSession.workingCopy == null) return;
+        if (MapSession.selectedId == MapSession.OriginalId) MapSession.selectedId = MapSession.UnsavedId;
+        queuedTestRuns = 0;
+        StartMatch(quickTest: false);
+    }
+
+    void QuickTestWorkingCopy()
+    {
+        CommitName();
+        if (MapSession.workingCopy == null) return;
+        if (MapSession.selectedId == MapSession.OriginalId) MapSession.selectedId = MapSession.UnsavedId;
+        queuedTestRuns = 1;
+        StartMatch(quickTest: true);
+    }
+
+    void StartMatch(bool quickTest)
+    {
+        Time.timeScale = 1f;
+        MapSession.continueTest = false;
+        MapSession.phase = quickTest ? MapSession.Phase.QuickTest : MapSession.Phase.Play;
+        MapSession.returnAfterMatch = false;
+        MapSession.allowLookAround = false;
+        if (quickTest)
+        {
+            int runs = queuedTestRuns > 0 ? queuedTestRuns : Mathf.Max(1, MapSession.testRunCount);
+            queuedTestRuns = 0;
+            MapSession.activeTestRuns = runs;
+            MapSession.testRunsFinished = 0;
+        }
+        else
+        {
+            MapSession.activeTestRuns = 0;
+            MapSession.testRunsFinished = 0;
+        }
+
+        screen = Screen.Playing;
+        if (postMatchPanel != null)
+        {
+            Destroy(postMatchPanel);
+            postMatchPanel = null;
+        }
+
+        HideSidePanel();
+
+        if (IsOriginalSelected())
+        {
+            PlayableMapBuilder.RestoreOriginalBattlefield();
+            builder.ClearGenerated();
+            PlayableMapBuilder.LinkOriginal(GameManager.Instance);
+        }
+        else if (MapSession.workingCopy != null)
+        {
+            ShowGenerated(editing: false);
+            builder.BakeNavigation();
+        }
+        else
+        {
+            ShowModeSelect();
+            return;
+        }
+
+        BeginMatchIfNeeded();
+    }
+
+    bool LoadSelectionIntoWorkingCopy()
+    {
+        if (MapSession.selectedId == MapSession.UnsavedId) return MapSession.workingCopy != null;
+
+        if (MapSession.workingCopy != null && MapSession.workingCopyDirty)
+        {
+            string workingFile = PlayableMapDefinition.FileNameFor(MapSession.workingCopy.mapName);
+            if (MapSession.selectedId == workingFile) return true;
+        }
+
+        PlayableMapDefinition loaded = PlayableMapDefinition.Load(MapSession.selectedId);
+        if (loaded == null) return false;
+        MapSession.workingCopy = loaded;
+        MapSession.workingCopyDirty = false;
+        return true;
+    }
+
+    void ReturnToMenu()
+    {
+        Time.timeScale = 1f;
+        MapSession.phase = MapSession.Phase.Menu;
+        MapSession.returnAfterMatch = false;
+        MapSession.continueTest = false;
+        MapSession.allowLookAround = true;
+        MapSession.activeTestRuns = 0;
+        TestDashboardOverlay.CurrentMatchNumber = 0;
+        TestDashboardOverlay.TargetMatchCount = 0;
+        if (postMatchPanel != null)
+        {
+            Destroy(postMatchPanel);
+            postMatchPanel = null;
+        }
+
+        if (GameManager.Instance != null)
+        {
+            GameManager.Instance.PrepareForRematch();
+            GameManager.Instance.SetAutoTestMode(false);
+        }
+
+        PlayableMapBuilder.RestoreOriginalBattlefield();
+        if (builder != null) builder.ClearGenerated();
+        ShowModeSelect();
+    }
+
+    void ShowPostMatch()
+    {
+        if (canvasObject == null) return;
+
+        postMatchPanel = new GameObject("Post Match");
+        postMatchPanel.transform.SetParent(canvasObject.transform, false);
+        Image image = postMatchPanel.AddComponent<Image>();
+        image.color = new Color(0.08f, 0.1f, 0.12f, 0.94f);
+        RectTransform rect = postMatchPanel.GetComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0.5f, 0f);
+        rect.anchorMax = new Vector2(0.5f, 0f);
+        rect.pivot = new Vector2(0.5f, 0f);
+        rect.sizeDelta = new Vector2(560f, 88f);
+        rect.anchoredPosition = new Vector2(0f, 24f);
+
+        HorizontalLayoutGroup row = postMatchPanel.AddComponent<HorizontalLayoutGroup>();
+        row.padding = new RectOffset(12, 12, 12, 12);
+        row.spacing = 12f;
+        row.childAlignment = TextAnchor.MiddleCenter;
+        row.childControlWidth = true;
+        row.childControlHeight = true;
+        row.childForceExpandWidth = true;
+        row.childForceExpandHeight = true;
+
+        if (!IsOriginalSelected() && MapSession.workingCopy != null)
+        {
+            AddButton(postMatchPanel.transform, "Edit this map", BackToEdit);
+        }
+
+        AddButton(postMatchPanel.transform, "Main menu", ReturnToMenu);
+    }
+
+    void BackToEdit()
+    {
+        if (postMatchPanel != null)
+        {
+            Destroy(postMatchPanel);
+            postMatchPanel = null;
+        }
+
+        TestDashboardOverlay.CurrentMatchNumber = 0;
+        TestDashboardOverlay.TargetMatchCount = 0;
+        MapSession.returnAfterMatch = false;
+        MapSession.continueTest = false;
+        MapSession.activeTestRuns = 0;
+        if (MapSession.workingCopy == null && !IsOriginalSelected())
+        {
+            MapSession.workingCopy = PlayableMapDefinition.Load(MapSession.selectedId);
+        }
+
+        if (MapSession.workingCopy == null || IsOriginalSelected())
+        {
+            ReturnToMenu();
+            return;
+        }
+
+        EnterEditMode();
+    }
+
+    void ContinueTestRun()
+    {
+        if (postMatchPanel != null)
+        {
+            Destroy(postMatchPanel);
+            postMatchPanel = null;
+        }
+
+        screen = Screen.Playing;
+        HideSidePanel();
+        if (UIManager.Instance != null) UIManager.Instance.HideGameOver();
+        if (GameManager.Instance == null) return;
+
+        PlayableMapBuilder.EnsureGameplayLinks(GameManager.Instance);
+        GameManager.Instance.PrepareForRematch();
+        GameManager.Instance.SetTestSpeed(MapSession.testSpeed);
+        GameManager.Instance.BeginWorkshopTest();
+        SetMatchChrome(showReadout: true, showCommands: false);
+    }
+
+    void SyncDraftFromMap()
+    {
+        PlayableMapDefinition map = MapSession.workingCopy;
+        if (map == null || map.sectors == null || map.sectors.Count == 0) return;
+
+        draftName = map.mapName;
+        draftSectorCount = Mathf.Clamp(map.sectors.Count, 1, 6);
+        draftPoints.Clear();
+        for (int i = 0; i < draftSectorCount; i++)
+        {
+            int points = map.sectors[i].controlPoints != null ? map.sectors[i].controlPoints.Count : 1;
+            draftPoints.Add(Mathf.Clamp(Mathf.Max(1, points), 1, 4));
+        }
+    }
+
+    void SetEditSectorCount(int count)
+    {
+        CommitName();
+        draftSectorCount = Mathf.Clamp(count, 1, 6);
+        while (draftPoints.Count < draftSectorCount) draftPoints.Add(1);
+        while (draftPoints.Count > draftSectorCount) draftPoints.RemoveAt(draftPoints.Count - 1);
+        RebuildLayoutFromCounts();
+    }
+
+    void SetEditPointCount(int index, int value)
+    {
+        CommitName();
+        if (index >= 0 && index < draftPoints.Count) draftPoints[index] = Mathf.Clamp(value, 1, 4);
+        RebuildLayoutFromCounts();
+    }
+
+    void RebuildLayoutFromCounts()
+    {
+        if (MapSession.workingCopy == null) return;
+        CommitName();
+        string name = MapSession.workingCopy.mapName;
+        MapSession.workingCopy = PlayableMapDefinition.CreateBlank(name, draftPoints);
+        MapSession.workingCopyDirty = true;
+        if (MapSession.selectedId == MapSession.OriginalId) MapSession.selectedId = MapSession.UnsavedId;
+        ShowGenerated(true);
+        ShowEdit();
+    }
+
+    void CentreAll()
+    {
+        if (MapSession.workingCopy == null) return;
+        CommitName();
+        MapSession.workingCopy.CentreContents();
+        MapSession.workingCopyDirty = true;
+        if (builder != null) builder.Sync();
+        if (statusText != null) statusText.text = "Spawns and control points recentred. Sector sizes stayed as they were.";
+    }
+
+    void SetMatchChrome(bool showReadout, bool showCommands)
+    {
+        if (UIManager.Instance != null) UIManager.Instance.SetMatchReadoutVisible(showReadout);
+        ControlModeHUD commandHud = FindAnyObjectByType<ControlModeHUD>(FindObjectsInactive.Include);
+        if (commandHud != null) commandHud.SetVisible(showCommands);
+        if (showCommands) StoreManager.ShowForCurrentMatch();
+        else StoreManager.Hide();
+        if (ControlModeManager.Instance == null) return;
+        if (showCommands) ControlModeManager.Instance.SetMode(ControlMode.Assist);
+        else if (showReadout) ControlModeManager.Instance.SetMode(ControlMode.Auto);
+    }
+
+    void AddPlayableMaps(UnityEngine.Events.UnityAction onPick)
+    {
+        AddMapChoice("Original", "The built-in battlefield", MapSession.OriginalId, onPick);
+        if (MapSession.workingCopy != null && MapSession.workingCopyDirty)
+        {
+            AddMapChoice(MapSession.workingCopy.mapName + " (unsaved)", "Still in this session", MapSession.UnsavedId, onPick);
+        }
+
+        foreach (string fileName in PlayableMapDefinition.ListSavedFileNames())
+        {
+            string label = fileName.EndsWith(".json") ? fileName.Substring(0, fileName.Length - 5) : fileName;
+            AddMapChoice(label, "Saved map", fileName, onPick);
+        }
+    }
+
+    void AddSpeedStepper()
+    {
+        int index = 0;
+        float bestGap = float.MaxValue;
+        for (int i = 0; i < TestSpeeds.Length; i++)
+        {
+            float gap = Mathf.Abs(TestSpeeds[i] - MapSession.testSpeed);
+            if (gap < bestGap)
+            {
+                bestGap = gap;
+                index = i;
+            }
+        }
+
+        GameObject row = AddRow();
+        AddTextOn(row.transform, "Speed", 18);
+        AddButton(row.transform, "-", () =>
+        {
+            MapSession.testSpeed = TestSpeeds[Mathf.Max(0, index - 1)];
+            ShowTestSetup();
+        });
+        AddTextOn(row.transform, TestSpeeds[index].ToString("0") + "x", 20);
+        AddButton(row.transform, "+", () =>
+        {
+            MapSession.testSpeed = TestSpeeds[Mathf.Min(TestSpeeds.Length - 1, index + 1)];
+            ShowTestSetup();
+        });
+    }
+
+    void CommitName()
+    {
+        if (nameInput == null || MapSession.workingCopy == null) return;
+        string next = nameInput.text == null ? "" : nameInput.text.Trim();
+        if (string.IsNullOrEmpty(next)) return;
+        if (next == MapSession.workingCopy.mapName) return;
+        MapSession.workingCopy.mapName = next;
+        MapSession.workingCopyDirty = true;
+    }
+
+    void CreateCanvas()
+    {
+        canvasObject = new GameObject("MapWorkshopCanvas");
+        canvasObject.transform.SetParent(transform, false);
+        Canvas canvas = canvasObject.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 40;
+        CanvasScaler scaler = canvasObject.AddComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920f, 1080f);
+        canvasObject.AddComponent<GraphicRaycaster>();
+
+        sidePanel = new GameObject("Side Panel");
+        sidePanel.transform.SetParent(canvasObject.transform, false);
+        Image image = sidePanel.AddComponent<Image>();
+        image.color = new Color(0.08f, 0.1f, 0.12f, 0.94f);
+        RectTransform rect = sidePanel.GetComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0f, 0f);
+        rect.anchorMax = new Vector2(0f, 1f);
+        rect.pivot = new Vector2(0f, 0.5f);
+        rect.sizeDelta = new Vector2(420f, -24f);
+        rect.anchoredPosition = new Vector2(12f, 0f);
+
+        VerticalLayoutGroup layout = sidePanel.AddComponent<VerticalLayoutGroup>();
+        layout.padding = new RectOffset(16, 16, 16, 16);
+        layout.spacing = 8f;
+        layout.childAlignment = TextAnchor.UpperLeft;
+        layout.childControlWidth = true;
+        layout.childControlHeight = true;
+        layout.childForceExpandWidth = true;
+        layout.childForceExpandHeight = false;
+    }
+
+    void HideSidePanel()
+    {
+        if (sidePanel != null) sidePanel.SetActive(false);
+    }
+
+    void ClearSidePanel()
+    {
+        if (sidePanel == null) return;
+        sidePanel.SetActive(true);
+        for (int i = sidePanel.transform.childCount - 1; i >= 0; i--)
+        {
+            Destroy(sidePanel.transform.GetChild(i).gameObject);
+        }
+
+        nameInput = null;
+        statusText = null;
+    }
+
+    void AddTitle(string text)
+    {
+        Text label = AddText(text, 26, FontStyle.Bold, TextAnchor.MiddleLeft);
+        LayoutElement element = label.gameObject.AddComponent<LayoutElement>();
+        element.minHeight = 40f;
+        element.preferredHeight = 40f;
+    }
+
+    Text AddBody(string text)
+    {
+        Text label = AddText(text, 16, FontStyle.Normal, TextAnchor.UpperLeft);
+        LayoutElement element = label.gameObject.AddComponent<LayoutElement>();
+        element.minHeight = 64f;
+        element.preferredHeight = 72f;
+        return label;
+    }
+
+    Text AddText(string value, int size, FontStyle style, TextAnchor anchor)
+    {
+        GameObject textObject = new GameObject("Text");
+        textObject.transform.SetParent(sidePanel.transform, false);
+        Text text = textObject.AddComponent<Text>();
+        text.font = BuiltinFont();
+        text.text = value;
+        text.fontSize = size;
+        text.fontStyle = style;
+        text.color = Color.white;
+        text.alignment = anchor;
+        text.horizontalOverflow = HorizontalWrapMode.Wrap;
+        text.verticalOverflow = VerticalWrapMode.Overflow;
+        return text;
+    }
+
+    void AddMapChoice(string label, string caption, string id, UnityEngine.Events.UnityAction onPick)
+    {
+        Button button = AddButton(sidePanel.transform, label, () =>
+        {
+            MapSession.selectedId = id;
+            if (onPick != null) onPick.Invoke();
+        });
+        ColorBlock colors = button.colors;
+        Color baseColor = new Color(0.18f, 0.22f, 0.28f, 1f);
+        colors.normalColor = baseColor;
+        colors.highlightedColor = baseColor * 1.1f;
+        colors.selectedColor = baseColor;
+        button.colors = colors;
+        Image image = button.GetComponent<Image>();
+        if (image != null) image.color = baseColor;
+        LayoutElement layout = button.GetComponent<LayoutElement>();
+        if (layout != null)
+        {
+            layout.minHeight = 58f;
+            layout.preferredHeight = 58f;
+        }
+
+        if (!string.IsNullOrEmpty(caption))
+        {
+            Text text = button.GetComponentInChildren<Text>();
+            if (text != null) text.text = label + "\n<size=14>" + caption + "</size>";
+        }
+    }
+
+    void AddStepper(string label, int value, int min, int max, System.Action<int> changed)
+    {
+        GameObject row = AddRow();
+        AddTextOn(row.transform, label, 18);
+        AddButton(row.transform, "-", () => changed(Mathf.Max(min, value - 1)));
+        AddTextOn(row.transform, value.ToString(), 20);
+        AddButton(row.transform, "+", () => changed(Mathf.Min(max, value + 1)));
+    }
+
+    GameObject AddRow()
+    {
+        GameObject row = new GameObject("Row");
+        row.transform.SetParent(sidePanel.transform, false);
+        HorizontalLayoutGroup layout = row.AddComponent<HorizontalLayoutGroup>();
+        layout.spacing = 8f;
+        layout.childAlignment = TextAnchor.MiddleLeft;
+        layout.childControlWidth = true;
+        layout.childControlHeight = true;
+        layout.childForceExpandWidth = true;
+        layout.childForceExpandHeight = true;
+        LayoutElement element = row.AddComponent<LayoutElement>();
+        element.minHeight = 40f;
+        element.preferredHeight = 40f;
+        return row;
+    }
+
+    void AddSpacer()
+    {
+        GameObject spacer = new GameObject("Spacer");
+        spacer.transform.SetParent(sidePanel.transform, false);
+        LayoutElement element = spacer.AddComponent<LayoutElement>();
+        element.minHeight = 8f;
+        element.preferredHeight = 8f;
+    }
+
+    InputField AddInput(string value)
+    {
+        GameObject inputObject = new GameObject("Name Input");
+        inputObject.transform.SetParent(sidePanel.transform, false);
+        Image image = inputObject.AddComponent<Image>();
+        image.color = new Color(0.12f, 0.14f, 0.18f, 1f);
+        LayoutElement element = inputObject.AddComponent<LayoutElement>();
+        element.minHeight = 40f;
+        element.preferredHeight = 40f;
+
+        GameObject textObject = new GameObject("Text");
+        textObject.transform.SetParent(inputObject.transform, false);
+        Text text = textObject.AddComponent<Text>();
+        text.font = BuiltinFont();
+        text.color = Color.white;
+        text.fontSize = 18;
+        text.supportRichText = false;
+        text.alignment = TextAnchor.MiddleLeft;
+        Stretch(textObject, 10f);
+
+        InputField input = inputObject.AddComponent<InputField>();
+        input.textComponent = text;
+        input.targetGraphic = image;
+        input.text = value;
+        input.lineType = InputField.LineType.SingleLine;
+        return input;
+    }
+
+    Button AddButton(Transform parent, string label, UnityEngine.Events.UnityAction onClick)
+    {
+        GameObject buttonObject = new GameObject(label);
+        buttonObject.transform.SetParent(parent, false);
+        Image image = buttonObject.AddComponent<Image>();
+        image.color = new Color(0.18f, 0.22f, 0.28f, 1f);
+        Button button = buttonObject.AddComponent<Button>();
+        button.targetGraphic = image;
+        button.onClick.AddListener(onClick);
+        LayoutElement element = buttonObject.AddComponent<LayoutElement>();
+        element.minHeight = 40f;
+        element.preferredHeight = 40f;
+        element.minWidth = 72f;
+
+        GameObject textObject = new GameObject("Label");
+        textObject.transform.SetParent(buttonObject.transform, false);
+        Text text = textObject.AddComponent<Text>();
+        text.font = BuiltinFont();
+        text.text = label;
+        text.fontSize = 18;
+        text.alignment = TextAnchor.MiddleCenter;
+        text.color = Color.white;
+        text.horizontalOverflow = HorizontalWrapMode.Wrap;
+        text.verticalOverflow = VerticalWrapMode.Overflow;
+        Stretch(textObject, 6f);
+        return button;
+    }
+
+    void AddTextOn(Transform parent, string value, int size)
+    {
+        GameObject textObject = new GameObject("Text");
+        textObject.transform.SetParent(parent, false);
+        Text text = textObject.AddComponent<Text>();
+        text.font = BuiltinFont();
+        text.text = value;
+        text.fontSize = size;
+        text.alignment = TextAnchor.MiddleCenter;
+        text.color = Color.white;
+        LayoutElement element = textObject.AddComponent<LayoutElement>();
+        element.minWidth = 36f;
+        element.preferredWidth = 120f;
+    }
+
+    static void Stretch(GameObject target, float padding)
+    {
+        RectTransform rect = target.GetComponent<RectTransform>();
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.offsetMin = new Vector2(padding, 4f);
+        rect.offsetMax = new Vector2(-padding, -4f);
+    }
+
+    static Font BuiltinFont()
+    {
+        Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        return font;
+    }
+}

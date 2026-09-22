@@ -107,7 +107,7 @@ public class MapRecipeWindow : EditorWindow
 
         if (GUILayout.Button("Stamp Chapter 1 Market preview"))
         {
-            MapRecipeStamper.StampChapter1MarketPreview();
+            MapRecipeStamper.StampChapter1Preview();
         }
 
         EditorGUILayout.HelpBox(

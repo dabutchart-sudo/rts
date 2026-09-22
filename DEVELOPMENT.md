@@ -18,7 +18,7 @@ The repository contains a playable prototype, but it has not yet passed a docume
 - attacker victory, defender victory, and sector intermission flow;
 - initial spawning, attacker respawning, defender reinforcement waves;
 - attacker ticket loss and sector capture bonus;
-- random player-faction assignment;
+- player chooses Attacker or Defender from the Play menu, with random assignment only if a match starts without that choice;
 - Alpha–Delta squad creation and automatic membership;
 - squad roles, persistent objectives, strength states, and reinforcement recovery;
 - Auto, Assist, and Manual control modes;
@@ -28,15 +28,19 @@ The repository contains a playable prototype, but it has not yet passed a docume
 - XP pools, unit store UI, base ownership, and AI purchasing;
 - capture, ticket, XP, victory, and transition UI;
 - AI diagnostics, match balance logging, screenshots, and accelerated batch-test support.
-- A Map Recipe asset and an editor stamp (`RTS → Maps`) that builds a `GeneratedMap` root from sectors, courtyard-flag counts, and districts.
+- A main-menu map workshop. It lists Original plus every blank map saved under `Assets/Data/Maps`, and it does not start a match on its own.
+- Blank maps are data, not new scenes: sector rectangles, control points, and both spawns. Borders and points can be dragged, then saved and played or quick-tested again.
+- A Map Recipe asset and an editor stamp (`RTS → Maps`) that builds a visual `GeneratedMap` preview from sectors, courtyard-flag counts, and districts. That preview is not the playable workshop.
 - One Kenney City Kit (Commercial) Market district in the preview scene: plaza, orange shop blocks, stall canopies, parasols, a small kiosk, and two courtyard flags. Kenney blocks are scaled by the recipe `visualScale` (8) so they read from the RTS camera. Orange comes from Kenney variation B. Flags are markers only.
 
 ## Known gaps and risks
 
 - Defender ticket spending currently needs validation; the code does not appear to reduce the defender pool.
+- SampleScene had attacker tickets left at 15. That pool ran out during the first sector, so the defenders won as soon as it was captured. Matches now start at 150, and the capture bonus is paid when the sector is secured, before the retreat pause. A later sector still has to be taken; only the last sector wins the match.
+- The saved front-line behaviour is wired back into the current match: a garrison stays on a taken point, survivors carry forward up to a cap of 16, capture is slower, and attackers wait on their own side of the line instead of being moved into the next sector. This still needs a play-mode check. Specialist abilities, combat effects, and squad routes are not part of this pass.
 - The full match loop, all control modes, spawning, and sector transitions need repeatable play-mode verification.
 - The single main scene and several map-related feature branches need consolidation.
-- The Market preview is not a playable Breakthrough map. SampleScene is still the match. Ground, roads, the other districts, NavMesh, and capture wiring are later chapter work.
+- The Market preview is not a playable Breakthrough map. Decoration (ground materials, roads, districts, prop scatter) waits until blank maps are easy to generate and retest.
 - Some systems are runtime-created or loosely coupled; scene and prefab references may fail silently.
 - Balance values are prototype values, not release decisions.
 - Desktop mouse input exists; touch/mobile interaction is not complete.
@@ -48,7 +52,7 @@ The repository contains a playable prototype, but it has not yet passed a docume
 
 ### Acceptance criteria
 
-- A fresh launch starts a match and assigns a playable faction.
+- A fresh launch opens the menu. Play starts a match as the side you chose.
 - Auto, Assist, and Manual modes behave as described in DESIGN.md.
 - Units form squads, select valid objectives, fight, die, and reinforce.
 - Every sector can be contested, captured, locked, and transitioned.
@@ -58,6 +62,8 @@ The repository contains a playable prototype, but it has not yet passed a docume
 - A short test report records build, platform, result, duration, and defects.
 
 ## Roadmap
+
+Current work is **Map Generation Phase 1**: blank playable maps from the main menu. **Phase 2** is rule-based decoration of a saved layout and is not current work. The milestones below stay after that.
 
 ### M1 — Stabilise the Breakthrough loop
 
@@ -98,14 +104,20 @@ The preview is not on `main`. Unity only shows it after the project is on branch
 
 The recipe asset is `Assets/Data/MapRecipes/Chapter1Market.asset`. Change sectors, flag counts, or `visualScale` there, then stamp again.
 
+## Making a blank map
+
+1. Press Play on `SampleScene` in Unity 6000.5.7f1. The opening menu offers **Play**, **Test**, and **Edit**. A match does not start on its own.
+2. Choose **Edit**, then **Create new**. The editor opens on a blank strip. Sector count and control points per sector are on that screen. Changing either rebuilds a fresh layout and keeps the name. **Auto centre all** recentres spawns and control points without changing sector sizes.
+3. Drag the white borders to resize sectors. Drag a gold marker to move a control point, and a red or blue marker to move that side's spawn.
+4. Choose **Save**, type a name, and save again. That name is the file in `Assets/Data/Maps` and the name in the menu. **Main menu**, then **Edit**, lists it. Opening it puts the borders and markers back, so you can drag them again. Original is listed for Play and Test, and it cannot be edited.
+5. **Play** asks for Attacker or Defender, then a map. The match runs at normal speed with tickets and Auto, Assist, and Manual, so you can command your side. **Test** asks for a speed and how many matches, then a map. Those matches play themselves on that same map. When they finish, **Edit this map** stays on the map you just tested.
+
 ## Immediate queue
 
-1. Run and document one complete match on `main`.
-2. Verify both factions' ticket depletion and win conditions.
-3. Test Auto, Assist, and Manual modes against explicit acceptance criteria.
-4. Audit the map branches and choose the canonical battlefield work.
-5. Fix the highest-impact defect found by the vertical-slice test.
-6. Repeat the test and retain balance logs.
+1. Use the map workshop to create, save, play, amend, and quick-test a blank map.
+2. Confirm Original still starts a Breakthrough match from the menu.
+3. Keep decoration (roads, districts, prop scatter) in Phase 2 until blank maps are comfortable to retest.
+4. Then return to a full match check: both win conditions, and Auto, Assist, and Manual.
 
 ## Definition of done
 
