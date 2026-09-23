@@ -4,6 +4,17 @@ using System.IO;
 using UnityEngine;
 
 [Serializable]
+public class PlayableDecorationPiece
+{
+    public string pieceId;
+    public int sectorIndex;
+    public string catalogId;
+    public Vector3 position;
+    public float yaw;
+    public bool kept;
+}
+
+[Serializable]
 public class PlayableSectorDefinition
 {
     public string sectorName = "Sector A";
@@ -24,6 +35,14 @@ public class PlayableMapDefinition
     public float minX = -20f;
     public float maxX = 20f;
     public List<PlayableSectorDefinition> sectors = new List<PlayableSectorDefinition>();
+    public List<PlayableDecorationPiece> decoration = new List<PlayableDecorationPiece>();
+    public List<Vector3> decorationBlocks = new List<Vector3>();
+    public const int MinDecorationDensity = 1;
+    public const int MaxDecorationDensity = 20;
+
+    public int decorationSeed = 1;
+    public int decorationDensity = 8;
+    public bool decorationGenerated;
 
     public static string FolderPath => Path.Combine(Application.dataPath, "Data/Maps");
 
@@ -87,6 +106,11 @@ public class PlayableMapDefinition
     {
         if (string.IsNullOrWhiteSpace(mapName)) mapName = "Untitled Map";
         if (sectors == null) sectors = new List<PlayableSectorDefinition>();
+        if (decoration == null) decoration = new List<PlayableDecorationPiece>();
+        if (decorationBlocks == null) decorationBlocks = new List<Vector3>();
+        if (decorationDensity < MinDecorationDensity)
+            decorationDensity = decorationGenerated ? 3 : 8;
+        decorationDensity = Mathf.Clamp(decorationDensity, MinDecorationDensity, MaxDecorationDensity);
         foreach (PlayableSectorDefinition sector in sectors)
         {
             if (sector == null) continue;
@@ -267,5 +291,171 @@ public class PlayableMapDefinition
         }
 
         return names;
+    }
+
+    public void EnsureDecoration()
+    {
+        Normalize();
+        if (decorationGenerated) return;
+        AddGeneratedDecoration();
+        decorationGenerated = true;
+    }
+
+    public void DressAgain()
+    {
+        Normalize();
+        decoration.RemoveAll(piece => piece == null || !piece.kept);
+        decorationSeed = decorationSeed >= int.MaxValue - 1 ? 1 : decorationSeed + 1;
+        AddGeneratedDecoration();
+        decorationGenerated = true;
+    }
+
+    public void SetDecorationDensity(int density)
+    {
+        Normalize();
+        decorationDensity = Mathf.Clamp(density, MinDecorationDensity, MaxDecorationDensity);
+        decoration.RemoveAll(piece => piece == null || !piece.kept);
+        AddGeneratedDecoration();
+        decorationGenerated = true;
+    }
+
+    public PlayableDecorationPiece FindDecoration(string pieceId)
+    {
+        if (string.IsNullOrEmpty(pieceId) || decoration == null) return null;
+        for (int i = 0; i < decoration.Count; i++)
+        {
+            if (decoration[i] != null && decoration[i].pieceId == pieceId) return decoration[i];
+        }
+
+        return null;
+    }
+
+    public void KeepDecoration(string pieceId, Vector3 world)
+    {
+        PlayableDecorationPiece piece = FindDecoration(pieceId);
+        if (piece == null) return;
+        int sectorIndex = SectorIndexAt(world.z);
+        if (sectorIndex < 0) sectorIndex = piece.sectorIndex;
+        piece.sectorIndex = sectorIndex;
+        piece.position = ClampInside(sectorIndex, world);
+        piece.kept = true;
+    }
+
+    public void RemoveDecoration(string pieceId)
+    {
+        PlayableDecorationPiece piece = FindDecoration(pieceId);
+        if (piece == null) return;
+        decorationBlocks.Add(piece.position);
+        decoration.Remove(piece);
+    }
+
+    void AddGeneratedDecoration()
+    {
+        string[] catalog = { "parasol-a", "parasol-b", "awning", "kiosk" };
+        for (int sectorIndex = 0; sectorIndex < sectors.Count; sectorIndex++)
+        {
+            PlayableSectorDefinition sector = sectors[sectorIndex];
+            if (sector == null) continue;
+
+            int already = 0;
+            for (int i = 0; i < decoration.Count; i++)
+            {
+                if (decoration[i] != null && decoration[i].sectorIndex == sectorIndex) already++;
+            }
+
+            int room = decorationDensity - already;
+            if (room <= 0) continue;
+
+            float inset = 4.5f;
+            float step = 4.8f;
+            var spots = new List<Vector3>();
+            for (float z = sector.minZ + inset; z <= sector.maxZ - inset; z += step)
+            {
+                for (float x = minX + inset; x <= maxX - inset; x += step)
+                {
+                    spots.Add(new Vector3(x, 0f, z));
+                }
+            }
+
+            var random = new System.Random(decorationSeed + (sectorIndex * 31));
+            for (int i = spots.Count - 1; i > 0; i--)
+            {
+                int swap = random.Next(i + 1);
+                Vector3 held = spots[i];
+                spots[i] = spots[swap];
+                spots[swap] = held;
+            }
+
+            int placed = 0;
+            for (int i = 0; i < spots.Count && placed < room; i++)
+            {
+                if (!DecorationSpotIsClear(sectorIndex, spots[i])) continue;
+                decoration.Add(new PlayableDecorationPiece
+                {
+                    pieceId = NextDecorationId(sectorIndex, placed),
+                    sectorIndex = sectorIndex,
+                    catalogId = catalog[random.Next(catalog.Length)],
+                    position = spots[i],
+                    yaw = random.Next(0, 8) * 45f,
+                    kept = false
+                });
+                placed++;
+            }
+        }
+    }
+
+    string NextDecorationId(int sectorIndex, int placed)
+    {
+        string id = "dec-" + decorationSeed + "-" + sectorIndex + "-" + placed;
+        int extra = 0;
+        while (FindDecoration(id) != null)
+        {
+            extra++;
+            id = "dec-" + decorationSeed + "-" + sectorIndex + "-" + placed + "-" + extra;
+        }
+
+        return id;
+    }
+
+    bool DecorationSpotIsClear(int sectorIndex, Vector3 spot)
+    {
+        PlayableSectorDefinition sector = sectors[sectorIndex];
+        if (Vector3.Distance(Flat(spot), Flat(sector.attackerSpawn)) < 9f) return false;
+        if (Vector3.Distance(Flat(spot), Flat(sector.defenderSpawn)) < 9f) return false;
+        if (sector.controlPoints != null)
+        {
+            for (int i = 0; i < sector.controlPoints.Count; i++)
+            {
+                if (Vector3.Distance(Flat(spot), Flat(sector.controlPoints[i])) < 8f) return false;
+            }
+        }
+
+        for (int i = 0; i < decoration.Count; i++)
+        {
+            if (decoration[i] != null && Vector3.Distance(Flat(spot), Flat(decoration[i].position)) < 4.6f) return false;
+        }
+
+        for (int i = 0; i < decorationBlocks.Count; i++)
+        {
+            if (Vector3.Distance(Flat(spot), Flat(decorationBlocks[i])) < 4.6f) return false;
+        }
+
+        return true;
+    }
+
+    int SectorIndexAt(float worldZ)
+    {
+        for (int i = 0; i < sectors.Count; i++)
+        {
+            if (worldZ >= sectors[i].minZ && worldZ <= sectors[i].maxZ) return i;
+        }
+
+        return sectors.Count == 0 ? -1 : sectors.Count - 1;
+    }
+
+    static Vector3 Flat(Vector3 point)
+    {
+        point.y = 0f;
+        return point;
     }
 }

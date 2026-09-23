@@ -9,11 +9,14 @@ public class MapEditHandle : MonoBehaviour
         DepthEdge,
         ControlPoint,
         AttackerSpawn,
-        DefenderSpawn
+        DefenderSpawn,
+        Decoration,
+        DecorationRemove
     }
 
     public Kind kind;
     public int sectorIndex;
     public int pointIndex;
     public int depthEdgeIndex;
+    public string decorationId;
 }

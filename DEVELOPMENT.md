@@ -37,10 +37,10 @@ The repository contains a playable prototype, but it has not yet passed a docume
 
 - Defender ticket spending currently needs validation; the code does not appear to reduce the defender pool.
 - SampleScene had attacker tickets left at 15. That pool ran out during the first sector, so the defenders won as soon as it was captured. Matches now start at 150, and the capture bonus is paid when the sector is secured, before the retreat pause. A later sector still has to be taken; only the last sector wins the match.
-- The saved front-line behaviour is wired back into the current match: a garrison stays on a taken point, survivors carry forward up to a cap of 16, capture is slower, and attackers wait on their own side of the line instead of being moved into the next sector. This still needs a play-mode check. Specialist abilities, combat effects, and squad routes are not part of this pass.
-- The full match loop, all control modes, spawning, and sector transitions need repeatable play-mode verification.
+- The saved front-line behaviour is in the current match: a garrison stays on a taken point, survivors carry forward up to a cap of 16, capture is slower, and attackers wait on their own side of the line instead of being moved into the next sector. On 22 Sep 2026 a played match ran through to a result. Specialist abilities, combat effects, and squad routes are not part of this pass.
+- One played match has reached a result. Original, both results, and Auto, Assist, and Manual were accepted in play on 22 Sep 2026.
 - The single main scene and several map-related feature branches need consolidation.
-- The Market preview is not a playable Breakthrough map. Decoration (ground materials, roads, districts, prop scatter) waits until blank maps are easy to generate and retest.
+- The Market preview is still a look check, not a playable Breakthrough map. Saved layouts dress themselves with Market pieces, and that first dressing was accepted on 23 Sep 2026. A population slider from 1 to 20 sets how full each sector is. Moving a piece keeps it, deleting one blocks that spot, and Dress again only replaces pieces you have not moved. The opening menu of wide rows on black, including ChatGPT Map and Unit Sandbox, was accepted the same day. Roads, ground materials, other districts, and a drag-from-palette are still later.
 - Some systems are runtime-created or loosely coupled; scene and prefab references may fail silently.
 - Balance values are prototype values, not release decisions.
 - Desktop mouse input exists; touch/mobile interaction is not complete.
@@ -63,7 +63,7 @@ The repository contains a playable prototype, but it has not yet passed a docume
 
 ## Roadmap
 
-Current work is **Map Generation Phase 1**: blank playable maps from the main menu. **Phase 2** is rule-based decoration of a saved layout and is not current work. The milestones below stay after that.
+The first slice of **Map Generation Phase 2** is in: Market dressing on a saved layout, with a population slider. The opening menu is accepted too. Roads, other districts, and a prop palette are the remaining decoration work. The milestones below stay after that.
 
 ### M1 — Stabilise the Breakthrough loop
 
@@ -106,18 +106,17 @@ The recipe asset is `Assets/Data/MapRecipes/Chapter1Market.asset`. Change sector
 
 ## Making a blank map
 
-1. Press Play on `SampleScene` in Unity 6000.5.7f1. The opening menu offers **Play**, **Test**, and **Edit**. A match does not start on its own.
+1. Press Play on `SampleScene` in Unity 6000.5.7f1. The opening menu is a stack of rows on a black screen: **Play**, **Test**, **Edit**, **ChatGPT Map**, and **Unit Sandbox**. A match does not start on its own. ChatGPT Map is the greybox battlefield. Unit Sandbox is for trying units. Each of those scenes has a Main menu button back to this screen.
 2. Choose **Edit**, then **Create new**. The editor opens on a blank strip. Sector count and control points per sector are on that screen. Changing either rebuilds a fresh layout and keeps the name. **Auto centre all** recentres spawns and control points without changing sector sizes.
 3. Drag the white borders to resize sectors. Drag a gold marker to move a control point, and a red or blue marker to move that side's spawn.
-4. Choose **Save**, type a name, and save again. That name is the file in `Assets/Data/Maps` and the name in the menu. **Main menu**, then **Edit**, lists it. Opening it puts the borders and markers back, so you can drag them again. Original is listed for Play and Test, and it cannot be edited.
+4. Choose **Save**, type a name, and save again. That name is the file in `Assets/Data/Maps` and the name in the menu. **Main menu**, then **Edit**, lists it. Opening it puts the borders and markers back, so you can drag them again. Original is listed for Play and Test, and it cannot be edited. The editor also dresses the map with Market pieces. **Population** runs from 1 to 20 and sets how many pieces each sector tries to place. Drag the gold sphere on a piece to keep it, or the small red sphere to delete it. **Dress again** replaces only the pieces you have not moved. Save stores that dressing, including the population level, with the map.
 5. **Play** asks for Attacker or Defender, then a map. The match runs at normal speed with tickets and Auto, Assist, and Manual, so you can command your side. **Test** asks for a speed and how many matches, then a map. Those matches play themselves on that same map. When they finish, **Edit this map** stays on the map you just tested.
 
 ## Immediate queue
 
-1. Use the map workshop to create, save, play, amend, and quick-test a blank map.
-2. Confirm Original still starts a Breakthrough match from the menu.
-3. Keep decoration (roads, districts, prop scatter) in Phase 2 until blank maps are comfortable to retest.
-4. Then return to a full match check: both win conditions, and Auto, Assist, and Manual.
+1. A played match on a workshop map has reached a result. Confirmed 22 Sep 2026. Original, both results, and Auto, Assist, and Manual were accepted the same day.
+2. The opening menu and the Market dressing, including the population slider, were accepted on 23 Sep 2026.
+3. Next decoration step, when chosen: a palette of pieces that can be dragged onto a map. Roads, ground materials, and other districts stay after that.
 
 ## Definition of done
 

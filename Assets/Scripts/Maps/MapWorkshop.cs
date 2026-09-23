@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 public class MapWorkshop : MonoBehaviour
@@ -18,6 +19,7 @@ public class MapWorkshop : MonoBehaviour
 
     PlayableMapBuilder builder;
     GameObject canvasObject;
+    GameObject backdrop;
     GameObject sidePanel;
     GameObject postMatchPanel;
     InputField nameInput;
@@ -181,6 +183,11 @@ public class MapWorkshop : MonoBehaviour
         if (Mouse.current.leftButton.wasPressedThisFrame && !PointerOverUi())
         {
             dragHandle = PickHandle(Mouse.current.position.ReadValue());
+            if (dragHandle != null && dragHandle.kind == MapEditHandle.Kind.DecorationRemove)
+            {
+                RemoveDecorationPiece(dragHandle.decorationId);
+                dragHandle = null;
+            }
         }
 
         if (Mouse.current.leftButton.isPressed && dragHandle != null)
@@ -214,6 +221,9 @@ public class MapWorkshop : MonoBehaviour
                 break;
             case MapEditHandle.Kind.DefenderSpawn:
                 map.sectors[handle.sectorIndex].defenderSpawn = map.ClampInside(handle.sectorIndex, world);
+                break;
+            case MapEditHandle.Kind.Decoration:
+                map.KeepDecoration(handle.decorationId, world);
                 break;
         }
 
@@ -258,17 +268,21 @@ public class MapWorkshop : MonoBehaviour
     {
         screen = Screen.Menu;
         MapSession.phase = MapSession.Phase.Menu;
-        MapSession.allowLookAround = true;
+        MapSession.allowLookAround = false;
         Time.timeScale = 1f;
         SetMatchChrome(showReadout: false, showCommands: false);
+        PlayableMapBuilder.HideOriginalBattlefield();
+        if (builder != null) builder.ClearGenerated();
         ClearSidePanel();
         AddTitle("Breakthrough");
         AddBody("Play a match as the side you choose, run a sped-up test, or edit a map.");
-        var row = AddRow();
-        AddButton(row.transform, "Play", ShowPlayFaction);
-        AddButton(row.transform, "Test", ShowTestSetup);
-        row = AddRow();
-        AddButton(row.transform, "Edit", ShowEditPick);
+        AddButton(sidePanel.transform, "Play", ShowPlayFaction);
+        AddButton(sidePanel.transform, "Test", ShowTestSetup);
+        AddButton(sidePanel.transform, "Edit", ShowEditPick);
+        AddSpacer();
+        AddBody("These open their own scenes. Main menu on that screen brings you back.");
+        AddButton(sidePanel.transform, "ChatGPT Map", () => OpenOutsideScene("GreyboxBattlefield01"));
+        AddButton(sidePanel.transform, "Unit Sandbox", () => OpenOutsideScene("UnitSandbox"));
         statusText = AddBody("");
     }
 
@@ -278,19 +292,17 @@ public class MapWorkshop : MonoBehaviour
         ClearSidePanel();
         AddTitle("Play");
         AddBody("Which side do you want to command? The match starts at normal speed, with tickets and Auto, Assist, and Manual.");
-        var row = AddRow();
-        AddButton(row.transform, "Attacker", () =>
+        AddButton(sidePanel.transform, "Attacker", () =>
         {
             MapSession.chosenFaction = Faction.Attacker;
             ShowPlayMaps();
         });
-        AddButton(row.transform, "Defender", () =>
+        AddButton(sidePanel.transform, "Defender", () =>
         {
             MapSession.chosenFaction = Faction.Defender;
             ShowPlayMaps();
         });
-        row = AddRow();
-        AddButton(row.transform, "Back", ShowModeSelect);
+        AddButton(sidePanel.transform, "Back", ShowModeSelect);
     }
 
     void ShowPlayMaps()
@@ -388,7 +400,7 @@ public class MapWorkshop : MonoBehaviour
         ClearSidePanel();
         PlayableMapDefinition map = MapSession.workingCopy;
         AddTitle(map != null ? map.mapName : "Edit map");
-        AddBody("Drag the white borders to resize sectors. Drag a gold point to move a control point, and a red or blue marker to move a spawn. Changing the counts below rebuilds a fresh layout and keeps the name. Save asks you what to call this map. WASD moves the camera. Q and E zoom.");
+        AddBody("Drag the white borders to resize sectors. Drag a gold point to move a control point, and a red or blue marker to move a spawn. Gold spheres on the market pieces move them, and the small red spheres delete them. Population chooses how many pieces each sector tries to place. Dress again replaces only the pieces you have not moved. Changing the counts below rebuilds a fresh layout and keeps the name. Save asks you what to call this map. WASD moves the camera. Q and E zoom.");
         AddStepper("Sectors", draftSectorCount, 1, 6, SetEditSectorCount);
         for (int i = 0; i < draftSectorCount && i < draftPoints.Count; i++)
         {
@@ -396,8 +408,12 @@ public class MapWorkshop : MonoBehaviour
             AddStepper("Sector " + (char)('A' + i) + " points", draftPoints[i], 1, 4, value => SetEditPointCount(index, value));
         }
 
+        int density = map != null ? map.decorationDensity : 8;
+        AddDensitySlider(density);
+
         var row = AddRow();
         AddButton(row.transform, "Auto centre all", CentreAll);
+        AddButton(row.transform, "Dress again", DressMapAgain);
         row = AddRow();
         AddButton(row.transform, "Save", ShowNameAndSave);
         AddButton(row.transform, "Play", PlayWorkingCopy);
@@ -722,6 +738,35 @@ public class MapWorkshop : MonoBehaviour
         if (statusText != null) statusText.text = "Spawns and control points recentred. Sector sizes stayed as they were.";
     }
 
+    void ApplyDecorationDensity(int density)
+    {
+        PlayableMapDefinition map = MapSession.workingCopy;
+        if (map == null || map.decorationDensity == density) return;
+        map.SetDecorationDensity(density);
+        MapSession.workingCopyDirty = true;
+        if (builder != null) builder.Sync();
+        if (statusText != null) statusText.text = "Population " + density + " per sector. Pieces you moved stay put. Save keeps this level.";
+    }
+
+    void DressMapAgain()
+    {
+        if (MapSession.workingCopy == null) return;
+        CommitName();
+        MapSession.workingCopy.DressAgain();
+        MapSession.workingCopyDirty = true;
+        if (builder != null) builder.Sync();
+        if (statusText != null) statusText.text = "New dressing placed. Pieces you already moved stay put, and deleted spots stay empty.";
+    }
+
+    void RemoveDecorationPiece(string pieceId)
+    {
+        if (MapSession.workingCopy == null) return;
+        MapSession.workingCopy.RemoveDecoration(pieceId);
+        MapSession.workingCopyDirty = true;
+        if (builder != null) builder.Sync();
+        if (statusText != null) statusText.text = "Piece removed. Dress again will not put one back on that spot.";
+    }
+
     void SetMatchChrome(bool showReadout, bool showCommands)
     {
         if (UIManager.Instance != null) UIManager.Instance.SetMatchReadoutVisible(showReadout);
@@ -788,6 +833,14 @@ public class MapWorkshop : MonoBehaviour
         MapSession.workingCopyDirty = true;
     }
 
+    void OpenOutsideScene(string sceneName)
+    {
+        Time.timeScale = 1f;
+        MapSession.phase = MapSession.Phase.Menu;
+        MapSession.allowLookAround = false;
+        SceneManager.LoadScene(sceneName);
+    }
+
     void CreateCanvas()
     {
         canvasObject = new GameObject("MapWorkshopCanvas");
@@ -800,7 +853,18 @@ public class MapWorkshop : MonoBehaviour
         scaler.referenceResolution = new Vector2(1920f, 1080f);
         canvasObject.AddComponent<GraphicRaycaster>();
 
-        sidePanel = new GameObject("Side Panel");
+        backdrop = new GameObject("Menu Backdrop");
+        backdrop.transform.SetParent(canvasObject.transform, false);
+        Image backdropImage = backdrop.AddComponent<Image>();
+        backdropImage.color = Color.black;
+        backdropImage.raycastTarget = true;
+        RectTransform backdropRect = backdrop.GetComponent<RectTransform>();
+        backdropRect.anchorMin = Vector2.zero;
+        backdropRect.anchorMax = Vector2.one;
+        backdropRect.offsetMin = Vector2.zero;
+        backdropRect.offsetMax = Vector2.zero;
+
+        sidePanel = new GameObject("Menu Rows");
         sidePanel.transform.SetParent(canvasObject.transform, false);
         Image image = sidePanel.AddComponent<Image>();
         image.color = new Color(0.08f, 0.1f, 0.12f, 0.94f);
@@ -819,11 +883,14 @@ public class MapWorkshop : MonoBehaviour
         layout.childControlHeight = true;
         layout.childForceExpandWidth = true;
         layout.childForceExpandHeight = false;
+        sidePanel.AddComponent<ContentSizeFitter>();
+        ApplyMenuLayout();
     }
 
     void HideSidePanel()
     {
         if (sidePanel != null) sidePanel.SetActive(false);
+        ApplyMenuLayout();
     }
 
     void ClearSidePanel()
@@ -837,11 +904,52 @@ public class MapWorkshop : MonoBehaviour
 
         nameInput = null;
         statusText = null;
+        ApplyMenuLayout();
+    }
+
+    void ApplyMenuLayout()
+    {
+        bool menu = screen == Screen.Menu;
+        if (backdrop != null) backdrop.SetActive(menu);
+        if (sidePanel == null) return;
+
+        Image image = sidePanel.GetComponent<Image>();
+        RectTransform rect = sidePanel.GetComponent<RectTransform>();
+        ContentSizeFitter fitter = sidePanel.GetComponent<ContentSizeFitter>();
+        if (menu)
+        {
+            if (image != null) image.color = new Color(0f, 0f, 0f, 0f);
+            rect.anchorMin = new Vector2(0.5f, 0.5f);
+            rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = Vector2.zero;
+            rect.sizeDelta = new Vector2(760f, 0f);
+            if (fitter != null)
+            {
+                fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+                fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+            }
+        }
+        else
+        {
+            if (image != null) image.color = new Color(0.08f, 0.1f, 0.12f, 0.94f);
+            rect.anchorMin = new Vector2(0f, 0f);
+            rect.anchorMax = new Vector2(0f, 1f);
+            rect.pivot = new Vector2(0f, 0.5f);
+            rect.sizeDelta = new Vector2(420f, -24f);
+            rect.anchoredPosition = new Vector2(12f, 0f);
+            if (fitter != null)
+            {
+                fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+                fitter.verticalFit = ContentSizeFitter.FitMode.Unconstrained;
+            }
+        }
     }
 
     void AddTitle(string text)
     {
-        Text label = AddText(text, 26, FontStyle.Bold, TextAnchor.MiddleLeft);
+        TextAnchor anchor = screen == Screen.Menu ? TextAnchor.MiddleCenter : TextAnchor.MiddleLeft;
+        Text label = AddText(text, 26, FontStyle.Bold, anchor);
         LayoutElement element = label.gameObject.AddComponent<LayoutElement>();
         element.minHeight = 40f;
         element.preferredHeight = 40f;
@@ -849,7 +957,8 @@ public class MapWorkshop : MonoBehaviour
 
     Text AddBody(string text)
     {
-        Text label = AddText(text, 16, FontStyle.Normal, TextAnchor.UpperLeft);
+        TextAnchor anchor = screen == Screen.Menu ? TextAnchor.MiddleCenter : TextAnchor.UpperLeft;
+        Text label = AddText(text, 16, FontStyle.Normal, anchor);
         LayoutElement element = label.gameObject.AddComponent<LayoutElement>();
         element.minHeight = 64f;
         element.preferredHeight = 72f;
@@ -899,6 +1008,65 @@ public class MapWorkshop : MonoBehaviour
             Text text = button.GetComponentInChildren<Text>();
             if (text != null) text.text = label + "\n<size=14>" + caption + "</size>";
         }
+    }
+
+    void AddDensitySlider(int value)
+    {
+        GameObject row = AddRow();
+        Text readout = AddTextOn(row.transform, "Population " + value, 18);
+        if (readout != null)
+        {
+            LayoutElement readoutLayout = readout.GetComponent<LayoutElement>();
+            if (readoutLayout != null)
+            {
+                readoutLayout.minWidth = 128f;
+                readoutLayout.preferredWidth = 140f;
+                readoutLayout.flexibleWidth = 0f;
+            }
+        }
+
+        GameObject sliderObject = new GameObject("Population");
+        sliderObject.transform.SetParent(row.transform, false);
+        LayoutElement layout = sliderObject.AddComponent<LayoutElement>();
+        layout.minWidth = 140f;
+        layout.flexibleWidth = 1f;
+        layout.minHeight = 28f;
+        Image background = sliderObject.AddComponent<Image>();
+        background.color = new Color(0.12f, 0.14f, 0.18f, 1f);
+
+        GameObject fill = new GameObject("Fill");
+        fill.transform.SetParent(sliderObject.transform, false);
+        RectTransform fillRect = fill.AddComponent<RectTransform>();
+        fillRect.anchorMin = Vector2.zero;
+        fillRect.anchorMax = Vector2.one;
+        fillRect.offsetMin = new Vector2(4f, 4f);
+        fillRect.offsetMax = new Vector2(-4f, -4f);
+        Image fillImage = fill.AddComponent<Image>();
+        fillImage.color = new Color(0.45f, 0.55f, 0.32f, 1f);
+
+        GameObject handle = new GameObject("Handle");
+        handle.transform.SetParent(sliderObject.transform, false);
+        RectTransform handleRect = handle.AddComponent<RectTransform>();
+        handleRect.sizeDelta = new Vector2(16f, 24f);
+        Image handleImage = handle.AddComponent<Image>();
+        handleImage.color = new Color(0.95f, 0.85f, 0.4f, 1f);
+
+        Slider slider = sliderObject.AddComponent<Slider>();
+        slider.fillRect = fillRect;
+        slider.handleRect = handleRect;
+        slider.targetGraphic = handleImage;
+        slider.direction = Slider.Direction.LeftToRight;
+        slider.minValue = PlayableMapDefinition.MinDecorationDensity;
+        slider.maxValue = PlayableMapDefinition.MaxDecorationDensity;
+        slider.wholeNumbers = true;
+        slider.navigation = new Navigation { mode = Navigation.Mode.None };
+        slider.SetValueWithoutNotify(Mathf.Clamp(value, slider.minValue, slider.maxValue));
+        slider.onValueChanged.AddListener(newValue =>
+        {
+            int density = Mathf.RoundToInt(newValue);
+            if (readout != null) readout.text = "Population " + density;
+            ApplyDecorationDensity(density);
+        });
     }
 
     void AddStepper(string label, int value, int min, int max, System.Action<int> changed)
@@ -992,7 +1160,7 @@ public class MapWorkshop : MonoBehaviour
         return button;
     }
 
-    void AddTextOn(Transform parent, string value, int size)
+    Text AddTextOn(Transform parent, string value, int size)
     {
         GameObject textObject = new GameObject("Text");
         textObject.transform.SetParent(parent, false);
@@ -1005,6 +1173,7 @@ public class MapWorkshop : MonoBehaviour
         LayoutElement element = textObject.AddComponent<LayoutElement>();
         element.minWidth = 36f;
         element.preferredWidth = 120f;
+        return text;
     }
 
     static void Stretch(GameObject target, float padding)

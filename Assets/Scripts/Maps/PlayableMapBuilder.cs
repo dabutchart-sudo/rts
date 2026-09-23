@@ -37,6 +37,7 @@ public class PlayableMapBuilder
     Transform handlesRoot;
     Transform widthMin;
     Transform widthMax;
+    Transform decorationRoot;
     Sector[] wired;
 
     class BuiltSector
@@ -91,6 +92,7 @@ public class PlayableMapBuilder
         handlesRoot = null;
         widthMin = null;
         widthMax = null;
+        decorationRoot = null;
         wired = null;
         built.Clear();
         depthHandles.Clear();
@@ -211,6 +213,9 @@ public class PlayableMapBuilder
             widthMax.position = new Vector3(map.maxX, 1.4f, centerZ);
             widthMax.localScale = new Vector3(2.2f, 2.2f, depth);
         }
+
+        map.EnsureDecoration();
+        SyncDecoration();
     }
 
     public void SetEditing(bool editing)
@@ -228,6 +233,119 @@ public class PlayableMapBuilder
             SetGrabActive(visual.attacker, editing);
             SetGrabActive(visual.defender, editing);
         }
+
+        if (decorationRoot != null)
+        {
+            for (int i = 0; i < decorationRoot.childCount; i++)
+            {
+                Transform piece = decorationRoot.GetChild(i);
+                SetGrabActive(piece, editing);
+                Transform remove = piece.Find("Remove");
+                if (remove != null) remove.gameObject.SetActive(editing);
+            }
+        }
+    }
+
+    const float DecorationScale = 4f;
+
+    void SyncDecoration()
+    {
+        if (root == null || map == null) return;
+        map.EnsureDecoration();
+        if (decorationRoot == null)
+        {
+            var decorationObject = new GameObject("Decoration");
+            decorationObject.transform.SetParent(root.transform, false);
+            decorationRoot = decorationObject.transform;
+        }
+
+        var alive = new HashSet<string>();
+        for (int i = 0; i < map.decoration.Count; i++)
+        {
+            PlayableDecorationPiece piece = map.decoration[i];
+            if (piece == null || string.IsNullOrEmpty(piece.pieceId)) continue;
+            alive.Add(piece.pieceId);
+            Transform visual = decorationRoot.Find(piece.pieceId);
+            if (visual == null) visual = CreateDecorationVisual(piece);
+            visual.position = piece.position;
+            visual.rotation = Quaternion.Euler(0f, piece.yaw, 0f);
+        }
+
+        for (int i = decorationRoot.childCount - 1; i >= 0; i--)
+        {
+            Transform child = decorationRoot.GetChild(i);
+            if (!alive.Contains(child.name)) Object.Destroy(child.gameObject);
+        }
+    }
+
+    Transform CreateDecorationVisual(PlayableDecorationPiece piece)
+    {
+        var visual = new GameObject(piece.pieceId);
+        visual.transform.SetParent(decorationRoot, false);
+        visual.transform.localScale = Vector3.one * DecorationScale;
+
+        GameObject model = CreateDecorationModel(piece.catalogId);
+        model.transform.SetParent(visual.transform, false);
+
+        BoxCollider obstacle = visual.AddComponent<BoxCollider>();
+        obstacle.center = new Vector3(0f, 0.25f, 0f);
+        obstacle.size = new Vector3(0.9f, 0.5f, 0.9f);
+
+        CreateDecorationHandle(visual.transform, "Grab", MapEditHandle.Kind.Decoration, piece.pieceId, new Vector3(0f, 0.7f, 0f), new Color(0.95f, 0.85f, 0.35f), 2.2f);
+        CreateDecorationHandle(visual.transform, "Remove", MapEditHandle.Kind.DecorationRemove, piece.pieceId, new Vector3(0.55f, 0.85f, 0f), new Color(0.85f, 0.2f, 0.18f), 1.2f);
+        return visual.transform;
+    }
+
+    void CreateDecorationHandle(Transform parent, string objectName, MapEditHandle.Kind kind, string pieceId, Vector3 localPosition, Color color, float worldSize)
+    {
+        GameObject handle = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        handle.name = objectName;
+        handle.transform.SetParent(parent, false);
+        handle.transform.localPosition = localPosition;
+        handle.transform.localScale = Vector3.one * (worldSize / DecorationScale);
+        Paint(handle, color);
+        MapEditHandle marker = handle.AddComponent<MapEditHandle>();
+        marker.kind = kind;
+        marker.decorationId = pieceId;
+    }
+
+    static GameObject CreateDecorationModel(string catalogId)
+    {
+        string modelName = catalogId switch
+        {
+            "parasol-a" => "detail-parasol-a",
+            "parasol-b" => "detail-parasol-b",
+            "awning" => "detail-awning",
+            _ => "low-detail-building-n"
+        };
+
+#if UNITY_EDITOR
+        GameObject prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
+            MarketDistrictLayout.ModelFolder + "/" + modelName + ".fbx");
+        if (prefab != null)
+        {
+            GameObject model = Object.Instantiate(prefab);
+            foreach (Collider collider in model.GetComponentsInChildren<Collider>())
+            {
+                collider.enabled = false;
+                Object.Destroy(collider);
+            }
+
+            return model;
+        }
+#endif
+
+        GameObject fallback = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        fallback.transform.localScale = new Vector3(0.8f, 0.45f, 0.8f);
+        fallback.transform.localPosition = new Vector3(0f, 0.22f, 0f);
+        Collider fallbackCollider = fallback.GetComponent<Collider>();
+        if (fallbackCollider != null)
+        {
+            fallbackCollider.enabled = false;
+            Object.Destroy(fallbackCollider);
+        }
+
+        return fallback;
     }
 
     public void BakeNavigation()
