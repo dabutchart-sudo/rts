@@ -23,6 +23,7 @@ public class PlayableSectorDefinition
     public List<Vector3> controlPoints = new List<Vector3>();
     public Vector3 attackerSpawn;
     public Vector3 defenderSpawn;
+    public MapDistrictKind dressing = MapDistrictKind.Market;
 }
 
 [Serializable]
@@ -423,6 +424,17 @@ public class PlayableMapDefinition
         return null;
     }
 
+    public void SetSectorDressing(int index, MapDistrictKind kind)
+    {
+        Normalize();
+        if (index < 0 || index >= sectors.Count || sectors[index] == null) return;
+        if (sectors[index].dressing == kind) return;
+        sectors[index].dressing = kind;
+        decoration.RemoveAll(piece => piece != null && piece.sectorIndex == index && !piece.kept);
+        AddGeneratedDecorationForSector(index);
+        decorationGenerated = true;
+    }
+
     public bool TryPlaceKeptDecoration(string catalogId, Vector3 world)
     {
         Normalize();
@@ -451,12 +463,20 @@ public class PlayableMapDefinition
 
     void AddGeneratedDecoration()
     {
-        DecorationCatalog.Entry[] catalog = DecorationCatalog.AutoDressEntries();
-        if (catalog.Length == 0) return;
         for (int sectorIndex = 0; sectorIndex < sectors.Count; sectorIndex++)
         {
-            PlayableSectorDefinition sector = sectors[sectorIndex];
-            if (sector == null) continue;
+            AddGeneratedDecorationForSector(sectorIndex);
+        }
+    }
+
+    void AddGeneratedDecorationForSector(int sectorIndex)
+    {
+        if (sectorIndex < 0 || sectorIndex >= sectors.Count) return;
+        PlayableSectorDefinition sector = sectors[sectorIndex];
+        if (sector == null) return;
+
+        DecorationCatalog.Entry[] catalog = DecorationCatalog.AutoDressEntries(DecorationCatalog.GroupName(sector.dressing));
+        if (catalog.Length == 0) return;
 
             int already = 0;
             for (int i = 0; i < decoration.Count; i++)
@@ -465,7 +485,7 @@ public class PlayableMapDefinition
             }
 
             int room = decorationDensity - already;
-            if (room <= 0) continue;
+            if (room <= 0) return;
 
             float inset = 4.5f;
             float step = 4.8f;
@@ -488,21 +508,77 @@ public class PlayableMapDefinition
             }
 
             int placed = 0;
+            bool placeBarn = sector.dressing == MapDistrictKind.Farm && !SectorHasCatalog(sectorIndex, "barn");
             for (int i = 0; i < spots.Count && placed < room; i++)
             {
                 if (!DecorationSpotIsClear(sectorIndex, spots[i])) continue;
+                string catalogId = placeBarn ? "barn" : catalog[random.Next(catalog.Length)].id;
+                placeBarn = false;
                 decoration.Add(new PlayableDecorationPiece
                 {
                     pieceId = NextDecorationId(sectorIndex, placed),
                     sectorIndex = sectorIndex,
-                    catalogId = catalog[random.Next(catalog.Length)].id,
+                    catalogId = catalogId,
                     position = spots[i],
                     yaw = random.Next(0, 8) * 45f,
                     kept = false
                 });
                 placed++;
             }
+    }
+
+    public bool EnsureFarmLandmarks()
+    {
+        Normalize();
+        bool added = false;
+        for (int sectorIndex = 0; sectorIndex < sectors.Count; sectorIndex++)
+        {
+            PlayableSectorDefinition sector = sectors[sectorIndex];
+            if (sector == null || sector.dressing != MapDistrictKind.Farm) continue;
+            if (SectorHasCatalog(sectorIndex, "barn")) continue;
+            if (TryPlaceCatalogInSector(sectorIndex, "barn")) added = true;
         }
+
+        return added;
+    }
+
+    bool SectorHasCatalog(int sectorIndex, string catalogId)
+    {
+        if (decoration == null) return false;
+        for (int i = 0; i < decoration.Count; i++)
+        {
+            PlayableDecorationPiece piece = decoration[i];
+            if (piece != null && piece.sectorIndex == sectorIndex && piece.catalogId == catalogId) return true;
+        }
+
+        return false;
+    }
+
+    bool TryPlaceCatalogInSector(int sectorIndex, string catalogId)
+    {
+        PlayableSectorDefinition sector = sectors[sectorIndex];
+        float inset = 4.5f;
+        float step = 4.8f;
+        for (float z = sector.minZ + inset; z <= sector.maxZ - inset; z += step)
+        {
+            for (float x = minX + inset; x <= maxX - inset; x += step)
+            {
+                Vector3 spot = new Vector3(x, 0f, z);
+                if (!DecorationSpotIsClear(sectorIndex, spot)) continue;
+                decoration.Add(new PlayableDecorationPiece
+                {
+                    pieceId = NextDecorationId(sectorIndex, decoration.Count),
+                    sectorIndex = sectorIndex,
+                    catalogId = catalogId,
+                    position = spot,
+                    yaw = 0f,
+                    kept = false
+                });
+                return true;
+            }
+        }
+
+        return false;
     }
 
     string NextDecorationId(int sectorIndex, int placed)

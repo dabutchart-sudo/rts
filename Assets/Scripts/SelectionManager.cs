@@ -233,36 +233,15 @@ public class SelectionManager : MonoBehaviour
 
     void SelectSingleUnit()
     {
+        if (Camera.main == null || Mouse.current == null) return;
         Vector2 mousePos = Mouse.current.position.ReadValue();
         Ray ray = Camera.main.ScreenPointToRay(mousePos);
+        SelectableUnit clickedUnit = PickFriendlyUnit(ray, mousePos);
 
-        if (!Physics.Raycast(ray, out RaycastHit hit))
-        {
-            ClearSelection();
-            lastClickedUnit = null;
-            Debug.Log("RAYCAST MISSED: The mouse did not hit any physical colliders.");
-            return;
-        }
-
-        Debug.Log($"RAYCAST HIT: Object = {hit.collider.gameObject.name}, Tag = {hit.collider.tag}");
-
-        SelectableUnit clickedUnit = hit.collider.GetComponentInParent<SelectableUnit>();
         if (clickedUnit == null)
         {
             ClearSelection();
             lastClickedUnit = null;
-            Debug.LogWarning("SELECTION FAILED: No SelectableUnit script found on this object or its parent.");
-            return;
-        }
-
-        string validTag = GetValidSelectionTag();
-        Debug.Log($"FACTION CHECK: Player needs '{validTag}'. Clicked unit is '{clickedUnit.gameObject.tag}'.");
-
-        if (!clickedUnit.gameObject.CompareTag(validTag))
-        {
-            ClearSelection();
-            lastClickedUnit = null;
-            Debug.LogWarning("SELECTION FAILED: Wrong faction tag.");
             return;
         }
 
@@ -277,7 +256,45 @@ public class SelectionManager : MonoBehaviour
 
         ClearSelection();
         AddUnitToSelection(clickedUnit);
-        Debug.Log("SELECTION SUCCESS.");
+    }
+
+    SelectableUnit PickFriendlyUnit(Ray ray, Vector2 mousePosition)
+    {
+        string validTag = GetValidSelectionTag();
+        RaycastHit[] hits = Physics.RaycastAll(ray, 800f);
+        SelectableUnit closest = null;
+        float closestDistance = float.MaxValue;
+        for (int i = 0; i < hits.Length; i++)
+        {
+            SelectableUnit unit = hits[i].collider.GetComponentInParent<SelectableUnit>();
+            if (unit == null || !unit.gameObject.CompareTag(validTag)) continue;
+            if (hits[i].distance < closestDistance)
+            {
+                closest = unit;
+                closestDistance = hits[i].distance;
+            }
+        }
+
+        if (closest != null) return closest;
+        if (Camera.main == null) return null;
+
+        float bestPixels = 32f;
+        SelectableUnit screenPick = null;
+        for (int i = 0; i < allUnits.Count; i++)
+        {
+            SelectableUnit unit = allUnits[i];
+            if (unit == null || !unit.gameObject.CompareTag(validTag)) continue;
+            Vector3 screen = Camera.main.WorldToScreenPoint(unit.transform.position + Vector3.up * 0.8f);
+            if (screen.z < 0f) continue;
+            float pixels = Vector2.Distance(mousePosition, new Vector2(screen.x, screen.y));
+            if (pixels < bestPixels)
+            {
+                bestPixels = pixels;
+                screenPick = unit;
+            }
+        }
+
+        return screenPick;
     }
 
     private bool TrySelectSquad(SelectableUnit clickedUnit)

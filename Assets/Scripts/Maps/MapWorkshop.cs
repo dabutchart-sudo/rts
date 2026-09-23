@@ -32,6 +32,8 @@ public class MapWorkshop : MonoBehaviour
     bool layingRoad;
     bool roadStartSet;
     Vector3 roadStart;
+    string selectedDecorationId;
+    string selectedRoadId;
 
     string draftName = "Blank Map";
     int draftSectorCount = 3;
@@ -73,6 +75,12 @@ public class MapWorkshop : MonoBehaviour
         }
 
         if (screen == Screen.Edit) HandleDrag();
+
+        if (screen == Screen.Edit && Keyboard.current != null &&
+            (Keyboard.current.deleteKey.wasPressedThisFrame || Keyboard.current.backspaceKey.wasPressedThisFrame))
+        {
+            DeleteSelection();
+        }
 
         if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
         {
@@ -243,18 +251,32 @@ public class MapWorkshop : MonoBehaviour
         if (Mouse.current.leftButton.wasPressedThisFrame && !PointerOverUi())
         {
             dragHandle = PickHandle(Mouse.current.position.ReadValue());
-            if (dragHandle != null && dragHandle.kind == MapEditHandle.Kind.DecorationRemove)
+            if (dragHandle != null && dragHandle.kind == MapEditHandle.Kind.Decoration)
+            {
+                selectedDecorationId = dragHandle.decorationId;
+                selectedRoadId = null;
+                if (builder != null) builder.HighlightDecoration(selectedDecorationId);
+            }
+            else if (dragHandle != null && dragHandle.kind == MapEditHandle.Kind.DecorationRemove)
             {
                 RemoveDecorationPiece(dragHandle.decorationId);
                 dragHandle = null;
                 return;
             }
-
-            if (dragHandle != null && dragHandle.kind == MapEditHandle.Kind.PlacedRoadRemove)
+            else if (dragHandle != null && dragHandle.kind == MapEditHandle.Kind.PlacedRoadRemove && !layingRoad)
             {
-                RemovePlacedRoad(dragHandle.decorationId);
+                selectedRoadId = dragHandle.decorationId;
+                selectedDecorationId = null;
+                if (builder != null) builder.HighlightDecoration(null);
                 dragHandle = null;
+                if (statusText != null) statusText.text = "Road selected. Press Delete to remove it. The centre road stays.";
                 return;
+            }
+            else if (!layingRoad)
+            {
+                selectedDecorationId = null;
+                selectedRoadId = null;
+                if (builder != null) builder.HighlightDecoration(null);
             }
 
             if (layingRoad)
@@ -502,12 +524,15 @@ public class MapWorkshop : MonoBehaviour
         ClearSidePanel();
         PlayableMapDefinition map = MapSession.workingCopy;
         AddTitle(map != null ? map.mapName : "Edit map");
-        AddBody("Drag borders, gold points, and the red or blue spawns. Population sets how many pieces each sector tries to place. Click a piece in the list, then click the map to place it. Lay road uses two clicks and keeps the road straight. The centre road stays. A red sphere deletes a road you added. Press Esc to stop placing.");
+        AddBody("Each row is one sector. Choose its points and whether it looks like a market or a farm. Click a piece to move it. Press Delete to remove the selected piece or an added road.");
         AddStepper("Sectors", draftSectorCount, 1, 6, SetEditSectorCount);
         for (int i = 0; i < draftSectorCount && i < draftPoints.Count; i++)
         {
             int index = i;
-            AddStepper("Sector " + (char)('A' + i) + " points", draftPoints[i], 1, 4, value => SetEditPointCount(index, value));
+            int points = draftPoints[i];
+            MapDistrictKind look = MapDistrictKind.Market;
+            if (map != null && index < map.sectors.Count) look = map.sectors[index].dressing;
+            AddSectorRow(index, points, look);
         }
 
         int density = map != null ? map.decorationDensity : 8;
@@ -845,6 +870,23 @@ public class MapWorkshop : MonoBehaviour
         if (statusText != null) statusText.text = "Spawns and control points recentred. Sector sizes stayed as they were.";
     }
 
+    void SetSectorLook(int index, MapDistrictKind kind)
+    {
+        PlayableMapDefinition map = MapSession.workingCopy;
+        if (map == null || index < 0 || index >= map.sectors.Count) return;
+        if (map.sectors[index].dressing == kind) return;
+        CommitName();
+        map.SetSectorDressing(index, kind);
+        MapSession.workingCopyDirty = true;
+        if (builder != null) builder.Sync();
+        ShowEdit();
+        if (statusText != null)
+        {
+            string look = kind == MapDistrictKind.Farm ? "farm" : "market";
+            statusText.text = "Sector " + (char)('A' + index) + " is now a " + look + ". Pieces you kept stay.";
+        }
+    }
+
     void ApplyDecorationDensity(int density)
     {
         PlayableMapDefinition map = MapSession.workingCopy;
@@ -888,6 +930,23 @@ public class MapWorkshop : MonoBehaviour
         MapSession.workingCopyDirty = true;
         if (builder != null) builder.Sync();
         if (statusText != null) statusText.text = "Piece removed. Dress again will not put one back on that spot.";
+        selectedDecorationId = null;
+        if (builder != null) builder.HighlightDecoration(null);
+    }
+
+    void DeleteSelection()
+    {
+        if (!string.IsNullOrEmpty(selectedDecorationId))
+        {
+            RemoveDecorationPiece(selectedDecorationId);
+            return;
+        }
+
+        if (!string.IsNullOrEmpty(selectedRoadId))
+        {
+            RemovePlacedRoad(selectedRoadId);
+            selectedRoadId = null;
+        }
     }
 
     void ToggleLayRoad()
@@ -1165,6 +1224,111 @@ public class MapWorkshop : MonoBehaviour
             Text text = button.GetComponentInChildren<Text>();
             if (text != null) text.text = label + "\n<size=14>" + caption + "</size>";
         }
+    }
+
+    void AddSectorRow(int index, int points, MapDistrictKind look)
+    {
+        GameObject row = AddRow();
+        Text label = AddTextOn(row.transform, "Sector " + (char)('A' + index), 16);
+        LayoutElement labelLayout = label.GetComponent<LayoutElement>();
+        if (labelLayout != null)
+        {
+            labelLayout.minWidth = 78f;
+            labelLayout.preferredWidth = 88f;
+            labelLayout.flexibleWidth = 0f;
+        }
+
+        AddDropdown(row.transform, new[] { "1 point", "2 points", "3 points", "4 points" }, Mathf.Clamp(points, 1, 4) - 1,
+            value => SetEditPointCount(index, value + 1));
+        AddDropdown(row.transform, new[] { "Market", "Farm" }, look == MapDistrictKind.Farm ? 1 : 0,
+            value => SetSectorLook(index, value == 1 ? MapDistrictKind.Farm : MapDistrictKind.Market));
+    }
+
+    void AddDropdown(Transform parent, string[] options, int value, UnityEngine.Events.UnityAction<int> changed)
+    {
+        GameObject dropdownObject = new GameObject("Dropdown");
+        dropdownObject.transform.SetParent(parent, false);
+        Image background = dropdownObject.AddComponent<Image>();
+        background.color = new Color(0.18f, 0.22f, 0.28f, 1f);
+        LayoutElement layout = dropdownObject.AddComponent<LayoutElement>();
+        layout.minWidth = 108f;
+        layout.flexibleWidth = 1f;
+        layout.minHeight = 32f;
+        layout.preferredHeight = 32f;
+
+        GameObject captionObject = new GameObject("Label");
+        captionObject.transform.SetParent(dropdownObject.transform, false);
+        Text caption = captionObject.AddComponent<Text>();
+        caption.font = BuiltinFont();
+        caption.fontSize = 15;
+        caption.color = Color.white;
+        caption.alignment = TextAnchor.MiddleLeft;
+        Stretch(captionObject, 8f);
+
+        GameObject template = new GameObject("Template");
+        template.transform.SetParent(dropdownObject.transform, false);
+        RectTransform templateRect = template.AddComponent<RectTransform>();
+        templateRect.anchorMin = new Vector2(0f, 0f);
+        templateRect.anchorMax = new Vector2(1f, 0f);
+        templateRect.pivot = new Vector2(0.5f, 1f);
+        templateRect.anchoredPosition = Vector2.zero;
+        templateRect.sizeDelta = new Vector2(0f, 132f);
+        Image templateImage = template.AddComponent<Image>();
+        templateImage.color = new Color(0.12f, 0.14f, 0.18f, 1f);
+        ScrollRect scroll = template.AddComponent<ScrollRect>();
+        scroll.horizontal = false;
+        scroll.movementType = ScrollRect.MovementType.Clamped;
+
+        GameObject viewport = new GameObject("Viewport");
+        viewport.transform.SetParent(template.transform, false);
+        RectTransform viewportRect = viewport.AddComponent<RectTransform>();
+        viewportRect.anchorMin = Vector2.zero;
+        viewportRect.anchorMax = Vector2.one;
+        viewportRect.offsetMin = Vector2.zero;
+        viewportRect.offsetMax = Vector2.zero;
+        viewport.AddComponent<RectMask2D>();
+        scroll.viewport = viewportRect;
+
+        GameObject content = new GameObject("Content");
+        content.transform.SetParent(viewport.transform, false);
+        RectTransform contentRect = content.AddComponent<RectTransform>();
+        contentRect.anchorMin = new Vector2(0f, 1f);
+        contentRect.anchorMax = new Vector2(1f, 1f);
+        contentRect.pivot = new Vector2(0.5f, 1f);
+        contentRect.sizeDelta = new Vector2(0f, 28f);
+        scroll.content = contentRect;
+
+        GameObject item = new GameObject("Item");
+        item.transform.SetParent(content.transform, false);
+        RectTransform itemRect = item.AddComponent<RectTransform>();
+        itemRect.anchorMin = new Vector2(0f, 0.5f);
+        itemRect.anchorMax = new Vector2(1f, 0.5f);
+        itemRect.sizeDelta = new Vector2(0f, 28f);
+        Toggle toggle = item.AddComponent<Toggle>();
+        Image itemImage = item.AddComponent<Image>();
+        itemImage.color = new Color(0.22f, 0.26f, 0.32f, 1f);
+        toggle.targetGraphic = itemImage;
+
+        GameObject itemLabelObject = new GameObject("Item Label");
+        itemLabelObject.transform.SetParent(item.transform, false);
+        Text itemLabel = itemLabelObject.AddComponent<Text>();
+        itemLabel.font = BuiltinFont();
+        itemLabel.fontSize = 15;
+        itemLabel.color = Color.white;
+        itemLabel.alignment = TextAnchor.MiddleLeft;
+        Stretch(itemLabelObject, 8f);
+
+        Dropdown dropdown = dropdownObject.AddComponent<Dropdown>();
+        dropdown.targetGraphic = background;
+        dropdown.template = templateRect;
+        dropdown.captionText = caption;
+        dropdown.itemText = itemLabel;
+        dropdown.options = new System.Collections.Generic.List<Dropdown.OptionData>();
+        for (int i = 0; i < options.Length; i++) dropdown.options.Add(new Dropdown.OptionData(options[i]));
+        dropdown.value = Mathf.Clamp(value, 0, options.Length - 1);
+        dropdown.RefreshShownValue();
+        dropdown.onValueChanged.AddListener(changed);
+        template.SetActive(false);
     }
 
     void AddPalette()

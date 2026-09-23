@@ -220,6 +220,9 @@ public class PlayableMapBuilder
             float sectorDepth = Mathf.Max(1f, sector.maxZ - sector.minZ);
             visual.tint.position = new Vector3(centerX, 0.15f, (sector.minZ + sector.maxZ) * 0.5f);
             visual.tint.localScale = new Vector3(Mathf.Max(1f, width - 1.4f), 0.08f, Mathf.Max(1f, sectorDepth - 1.4f));
+            Color tint = SectorColors[i % SectorColors.Length];
+            if (sector.dressing == MapDistrictKind.Farm) tint = new Color(0.34f, 0.48f, 0.24f);
+            TintExisting(visual.tint.gameObject, tint);
             if (visual.label != null)
             {
                 visual.label.position = new Vector3(centerX, 0.45f, (sector.minZ + sector.maxZ) * 0.5f);
@@ -265,6 +268,7 @@ public class PlayableMapBuilder
         }
 
         map.EnsureDecoration();
+        map.EnsureFarmLandmarks();
         SyncDecoration();
     }
 
@@ -352,11 +356,9 @@ public class PlayableMapBuilder
         CreateSurface("Slab", visual.transform, new Color(0.16f, 0.16f, 0.15f));
         CreateSurface("Line", visual.transform, new Color(0.75f, 0.72f, 0.55f));
 
-        GameObject handle = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        handle.name = "Remove";
-        handle.transform.SetParent(visual.transform, false);
-        Paint(handle, new Color(0.85f, 0.2f, 0.18f));
-        MapEditHandle marker = handle.AddComponent<MapEditHandle>();
+        BoxCollider picker = visual.AddComponent<BoxCollider>();
+        picker.isTrigger = true;
+        MapEditHandle marker = visual.AddComponent<MapEditHandle>();
         marker.kind = MapEditHandle.Kind.PlacedRoadRemove;
         marker.decorationId = roadId;
         return visual.transform;
@@ -392,6 +394,15 @@ public class PlayableMapBuilder
         {
             remove.position = new Vector3(middle.x, 1.6f, middle.z);
             remove.localScale = new Vector3(1.2f, 1.2f, 1.2f);
+        }
+
+        BoxCollider picker = visual.GetComponent<BoxCollider>();
+        if (picker != null)
+        {
+            picker.center = new Vector3(middle.x, 0.3f, middle.z);
+            picker.size = alongX
+                ? new Vector3(length, 0.4f, width)
+                : new Vector3(width, 0.4f, length);
         }
     }
 
@@ -436,13 +447,53 @@ public class PlayableMapBuilder
         GameObject model = CreateDecorationModel(piece.catalogId);
         model.transform.SetParent(visual.transform, false);
 
+        DecorationCatalog.Entry entry = DecorationCatalog.Find(piece.catalogId);
+        float footprint = entry.footprint > 0.1f ? entry.footprint : 0.9f;
         BoxCollider obstacle = visual.AddComponent<BoxCollider>();
         obstacle.center = new Vector3(0f, 0.25f, 0f);
-        obstacle.size = new Vector3(0.9f, 0.5f, 0.9f);
+        obstacle.size = new Vector3(footprint, 0.5f, footprint);
 
-        CreateDecorationHandle(visual.transform, "Grab", MapEditHandle.Kind.Decoration, piece.pieceId, new Vector3(0f, 0.7f, 0f), new Color(0.95f, 0.85f, 0.35f), 2.2f);
-        CreateDecorationHandle(visual.transform, "Remove", MapEditHandle.Kind.DecorationRemove, piece.pieceId, new Vector3(0.55f, 0.85f, 0f), new Color(0.85f, 0.2f, 0.18f), 1.2f);
+        MapEditHandle marker = visual.AddComponent<MapEditHandle>();
+        marker.kind = MapEditHandle.Kind.Decoration;
+        marker.decorationId = piece.pieceId;
+        CreateSelectionRing(visual.transform, footprint * 0.55f);
         return visual.transform;
+    }
+
+    static void CreateSelectionRing(Transform parent, float radius)
+    {
+        GameObject ringObject = new GameObject("Select");
+        ringObject.transform.SetParent(parent, false);
+        ringObject.transform.localPosition = new Vector3(0f, 0.08f, 0f);
+        LineRenderer ring = ringObject.AddComponent<LineRenderer>();
+        ring.useWorldSpace = false;
+        ring.loop = true;
+        ring.positionCount = 28;
+        ring.startWidth = 0.06f;
+        ring.endWidth = 0.06f;
+        ring.alignment = LineAlignment.TransformZ;
+        Shader shader = Shader.Find("Sprites/Default");
+        if (shader != null) ring.material = new Material(shader);
+        ring.startColor = new Color(0.95f, 0.85f, 0.35f, 1f);
+        ring.endColor = ring.startColor;
+        for (int i = 0; i < ring.positionCount; i++)
+        {
+            float angle = (i / (float)ring.positionCount) * Mathf.PI * 2f;
+            ring.SetPosition(i, new Vector3(Mathf.Cos(angle) * radius, 0f, Mathf.Sin(angle) * radius));
+        }
+
+        ringObject.SetActive(false);
+    }
+
+    public void HighlightDecoration(string pieceId)
+    {
+        if (decorationRoot == null) return;
+        for (int i = 0; i < decorationRoot.childCount; i++)
+        {
+            Transform piece = decorationRoot.GetChild(i);
+            Transform ring = piece.Find("Select");
+            if (ring != null) ring.gameObject.SetActive(piece.name == pieceId);
+        }
     }
 
     void CreateDecorationHandle(Transform parent, string objectName, MapEditHandle.Kind kind, string pieceId, Vector3 localPosition, Color color, float worldSize)
@@ -458,10 +509,61 @@ public class PlayableMapBuilder
         marker.decorationId = pieceId;
     }
 
+    static GameObject CreateFarmProp(string catalogId)
+    {
+        var root = new GameObject(catalogId);
+        switch (catalogId)
+        {
+            case "crop-row":
+                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(0f, 0.06f, -0.28f), new Vector3(1.3f, 0.08f, 0.22f), new Color(0.28f, 0.45f, 0.18f));
+                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(0f, 0.06f, 0f), new Vector3(1.3f, 0.08f, 0.22f), new Color(0.36f, 0.32f, 0.16f));
+                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(0f, 0.06f, 0.28f), new Vector3(1.3f, 0.08f, 0.22f), new Color(0.28f, 0.45f, 0.18f));
+                break;
+            case "hay-bale":
+                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(0f, 0.22f, 0f), new Vector3(0.7f, 0.4f, 0.45f), new Color(0.72f, 0.58f, 0.22f));
+                break;
+            case "fence":
+                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(-0.45f, 0.28f, 0f), new Vector3(0.08f, 0.55f, 0.08f), new Color(0.42f, 0.28f, 0.16f));
+                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(0.45f, 0.28f, 0f), new Vector3(0.08f, 0.55f, 0.08f), new Color(0.42f, 0.28f, 0.16f));
+                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(0f, 0.38f, 0f), new Vector3(1.05f, 0.08f, 0.08f), new Color(0.5f, 0.34f, 0.18f));
+                break;
+            case "barn":
+                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(0f, 0.45f, 0f), new Vector3(1.6f, 0.85f, 1.1f), new Color(0.55f, 0.18f, 0.14f));
+                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(0f, 1.0f, 0f), new Vector3(1.75f, 0.22f, 1.25f), new Color(0.32f, 0.18f, 0.12f));
+                break;
+            case "silo":
+                AddFarmPart(root.transform, PrimitiveType.Cylinder, new Vector3(0f, 0.7f, 0f), new Vector3(0.55f, 0.7f, 0.55f), new Color(0.78f, 0.78f, 0.74f));
+                AddFarmPart(root.transform, PrimitiveType.Cylinder, new Vector3(0f, 1.45f, 0f), new Vector3(0.62f, 0.08f, 0.62f), new Color(0.45f, 0.28f, 0.18f));
+                break;
+            default:
+                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(0f, 0.22f, 0f), new Vector3(0.8f, 0.45f, 0.8f), new Color(0.4f, 0.42f, 0.28f));
+                break;
+        }
+
+        return root;
+    }
+
+    static void AddFarmPart(Transform parent, PrimitiveType type, Vector3 localPosition, Vector3 localScale, Color color)
+    {
+        GameObject part = GameObject.CreatePrimitive(type);
+        part.transform.SetParent(parent, false);
+        part.transform.localPosition = localPosition;
+        part.transform.localScale = localScale;
+        Collider collider = part.GetComponent<Collider>();
+        if (collider != null)
+        {
+            collider.enabled = false;
+            Object.Destroy(collider);
+        }
+
+        Paint(part, color);
+    }
+
     static GameObject CreateDecorationModel(string catalogId)
     {
         DecorationCatalog.Entry entry = DecorationCatalog.Find(catalogId);
-        string modelName = string.IsNullOrEmpty(entry.modelFileName) ? catalogId : entry.modelFileName;
+        if (string.IsNullOrEmpty(entry.modelFileName)) return CreateFarmProp(catalogId);
+        string modelName = entry.modelFileName;
 
 #if UNITY_EDITOR
         GameObject prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
@@ -769,6 +871,16 @@ public class PlayableMapBuilder
         GameObject surface = CreateCube(objectName, parent, color);
         RemoveCollider(surface);
         return surface.transform;
+    }
+
+    static void TintExisting(GameObject target, Color color)
+    {
+        Renderer renderer = target.GetComponent<Renderer>();
+        if (renderer == null) return;
+        Material material = renderer.material;
+        if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
+        if (material.HasProperty("_Color")) material.SetColor("_Color", color);
+        material.color = color;
     }
 
     static void Paint(GameObject target, Color color)
