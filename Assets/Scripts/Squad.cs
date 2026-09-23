@@ -115,4 +115,11 @@ public class Squad
     {
         members.RemoveAll(member => member == null);
     }
+
+    public void ClearRoster()
+    {
+        members.Clear();
+        ClearOrder();
+        ClearStrategicObjective();
+    }
 }

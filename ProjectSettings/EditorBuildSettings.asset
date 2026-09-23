@@ -8,6 +8,15 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/SampleScene.unity
     guid: 99c9720ab356a0642a771bea13969a05
+  - enabled: 1
+    path: Assets/Scenes/Chapter1MarketPreview.unity
+    guid: c4a1b0e11a0c4f0a9b7e6d5c4b3a2921
+  - enabled: 1
+    path: Assets/Scenes/GreyboxBattlefield01.unity
+    guid: 6e6108b1cfaf94a2381c916b3303d2df
+  - enabled: 1
+    path: Assets/Scenes/UnitSandbox.unity
+    guid: a63ed9cda6b654e508472b76a8758ee2
   m_configObjects:
     com.unity.dt.app-ui: {fileID: 11400000, guid: 1b1c20d82303e4b5781c3ef50ac1449f, type: 2}
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}

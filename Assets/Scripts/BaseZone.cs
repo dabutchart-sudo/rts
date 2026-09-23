@@ -60,6 +60,13 @@ public class BaseZone : MonoBehaviour
         DrawCircle();
     }
 
+    public void RefreshVisual()
+    {
+        if (lineRenderer == null) lineRenderer = GetComponent<LineRenderer>();
+        if (spawnPoint == null) spawnPoint = transform;
+        SetupVisuals();
+    }
+
     void DrawCircle()
     {
         Vector3 center = spawnPoint.position;

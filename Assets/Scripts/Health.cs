@@ -42,6 +42,13 @@ public class Health : MonoBehaviour
         }
     }
 
+    public void Heal(float amount)
+    {
+        if (amount <= 0f) return;
+        currentHealth = Mathf.Clamp(currentHealth + amount, 0f, maxHealth);
+        UpdateHealthBar();
+    }
+
     public void UpdateHealthBar()
     {
         if (healthSlider != null)

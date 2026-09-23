@@ -1,0 +1,28 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c4a1b0e11a0c4f0a9b7e6d5c4b3a2910, type: 3}
+  m_Name: Chapter1Market
+  m_EditorClassIdentifier: Assembly-CSharp::MapRecipe
+  mapName: Chapter 1 Market
+  notes: "Chapter 1 market preview. One sector, two courtyard flags, and one Market district. Stamp it from the menu RTS → Maps. SampleScene stays the original map. The flags are courtyard markers, not wired capture points. visualScale 8 makes Kenney's one-metre blocks readable from the RTS camera. Orange shops and canopies use Kenney variation B."
+  sectors:
+  - sectorName: Market
+    flagsPerSector: 2
+    center: {x: 0, y: 0, z: 0}
+    size: {x: 48, y: 16, z: 48}
+  districts:
+  - districtName: Market
+    kind: 0
+    sectorIndex: 0
+    localPosition: {x: 0, y: 0, z: 0}
+    yawDegrees: 0
+    visualScale: 8

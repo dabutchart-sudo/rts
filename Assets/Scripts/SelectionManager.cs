@@ -49,14 +49,36 @@ public class SelectionManager : MonoBehaviour
         else Destroy(gameObject);
     }
 
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+    private static void EnsureInstanceExists()
+    {
+        if (Instance != null) return;
+        SelectionManager existing = FindAnyObjectByType<SelectionManager>(FindObjectsInactive.Include);
+        if (existing != null)
+        {
+            Instance = existing;
+            return;
+        }
+
+        GameObject host = new GameObject("SelectionManager");
+        host.AddComponent<SelectionManager>();
+    }
+
     void Start()
     {
+        if (selectionBox == null) selectionBox = CreateSelectionBox();
         if (selectionBox != null)
         {
             parentCanvas = selectionBox.GetComponentInParent<Canvas>();
             Image boxImage = selectionBox.GetComponent<Image>();
             if (boxImage != null) boxImage.enabled = true;
             selectionBox.gameObject.SetActive(false);
+        }
+
+        SelectableUnit[] existingUnits = FindObjectsByType<SelectableUnit>(FindObjectsInactive.Exclude);
+        foreach (SelectableUnit unit in existingUnits)
+        {
+            if (unit != null && !allUnits.Contains(unit)) allUnits.Add(unit);
         }
 
         if (ControlModeManager.Instance != null)
@@ -211,36 +233,15 @@ public class SelectionManager : MonoBehaviour
 
     void SelectSingleUnit()
     {
+        if (Camera.main == null || Mouse.current == null) return;
         Vector2 mousePos = Mouse.current.position.ReadValue();
         Ray ray = Camera.main.ScreenPointToRay(mousePos);
+        SelectableUnit clickedUnit = PickFriendlyUnit(ray, mousePos);
 
-        if (!Physics.Raycast(ray, out RaycastHit hit))
-        {
-            ClearSelection();
-            lastClickedUnit = null;
-            Debug.Log("RAYCAST MISSED: The mouse did not hit any physical colliders.");
-            return;
-        }
-
-        Debug.Log($"RAYCAST HIT: Object = {hit.collider.gameObject.name}, Tag = {hit.collider.tag}");
-
-        SelectableUnit clickedUnit = hit.collider.GetComponentInParent<SelectableUnit>();
         if (clickedUnit == null)
         {
             ClearSelection();
             lastClickedUnit = null;
-            Debug.LogWarning("SELECTION FAILED: No SelectableUnit script found on this object or its parent.");
-            return;
-        }
-
-        string validTag = GetValidSelectionTag();
-        Debug.Log($"FACTION CHECK: Player needs '{validTag}'. Clicked unit is '{clickedUnit.gameObject.tag}'.");
-
-        if (!clickedUnit.gameObject.CompareTag(validTag))
-        {
-            ClearSelection();
-            lastClickedUnit = null;
-            Debug.LogWarning("SELECTION FAILED: Wrong faction tag.");
             return;
         }
 
@@ -255,7 +256,45 @@ public class SelectionManager : MonoBehaviour
 
         ClearSelection();
         AddUnitToSelection(clickedUnit);
-        Debug.Log("SELECTION SUCCESS.");
+    }
+
+    SelectableUnit PickFriendlyUnit(Ray ray, Vector2 mousePosition)
+    {
+        string validTag = GetValidSelectionTag();
+        RaycastHit[] hits = Physics.RaycastAll(ray, 800f);
+        SelectableUnit closest = null;
+        float closestDistance = float.MaxValue;
+        for (int i = 0; i < hits.Length; i++)
+        {
+            SelectableUnit unit = hits[i].collider.GetComponentInParent<SelectableUnit>();
+            if (unit == null || !unit.gameObject.CompareTag(validTag)) continue;
+            if (hits[i].distance < closestDistance)
+            {
+                closest = unit;
+                closestDistance = hits[i].distance;
+            }
+        }
+
+        if (closest != null) return closest;
+        if (Camera.main == null) return null;
+
+        float bestPixels = 32f;
+        SelectableUnit screenPick = null;
+        for (int i = 0; i < allUnits.Count; i++)
+        {
+            SelectableUnit unit = allUnits[i];
+            if (unit == null || !unit.gameObject.CompareTag(validTag)) continue;
+            Vector3 screen = Camera.main.WorldToScreenPoint(unit.transform.position + Vector3.up * 0.8f);
+            if (screen.z < 0f) continue;
+            float pixels = Vector2.Distance(mousePosition, new Vector2(screen.x, screen.y));
+            if (pixels < bestPixels)
+            {
+                bestPixels = pixels;
+                screenPick = unit;
+            }
+        }
+
+        return screenPick;
     }
 
     private bool TrySelectSquad(SelectableUnit clickedUnit)
@@ -328,7 +367,7 @@ public class SelectionManager : MonoBehaviour
         }
     }
 
-    void ClearSelection()
+    public void ClearSelection()
     {
         foreach (SelectableUnit unit in selectedUnits)
         {
@@ -406,6 +445,35 @@ public class SelectionManager : MonoBehaviour
         }
 
         Debug.Log($"FORMATION MOVE: {validUnits.Count} units ordered in a {rows}x{columns} formation with {formationSpacing:0.0}m spacing.");
+    }
+
+    RectTransform CreateSelectionBox()
+    {
+        Canvas canvas = null;
+        Canvas[] canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Include);
+        foreach (Canvas candidate in canvases)
+        {
+            if (candidate != null && (candidate.gameObject.name == "Canvas" || candidate.gameObject.name == "Canvas_Gameplay"))
+            {
+                canvas = candidate;
+                break;
+            }
+        }
+
+        if (canvas == null) return null;
+
+        GameObject box = new GameObject("SelectionBox", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        box.transform.SetParent(canvas.transform, false);
+        Image image = box.GetComponent<Image>();
+        image.color = new Color(0.2f, 0.75f, 1f, 0.25f);
+        image.raycastTarget = false;
+        RectTransform rect = box.GetComponent<RectTransform>();
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.zero;
+        rect.pivot = Vector2.zero;
+        rect.sizeDelta = Vector2.zero;
+        box.SetActive(false);
+        return rect;
     }
 
     private Vector3 CalculateGroupCenter(List<SelectableUnit> units)

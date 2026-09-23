@@ -151,7 +151,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5588a9a4b315b4271a7182b6702ab683, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UIManager
-  ticketText: {fileID: 1687090612}
+  statsText: {fileID: 1687090612}
   captureText: {fileID: 1480971324}
   gameOverText: {fileID: 1696852451}
 --- !u!114 &83373985
@@ -1922,7 +1922,7 @@ MonoBehaviour:
   currentStage: 1
   defenderSpawner: {fileID: 503041645}
   defenderSpawnDistanceBehindSector: 15
-  attackerTickets: 15
+  attackerTickets: 150
   bonusTicketsOnSectorCapture: 15
   isGameOver: 0
 --- !u!4 &1748157940
