@@ -26,6 +26,9 @@ public class MapWorkshop : MonoBehaviour
     Text statusText;
     Screen screen = Screen.Menu;
     MapEditHandle dragHandle;
+    string armedCatalogId;
+    string palettePressId;
+    readonly List<PaletteChoice> paletteChoices = new List<PaletteChoice>();
 
     string draftName = "Blank Map";
     int draftSectorCount = 3;
@@ -78,6 +81,15 @@ public class MapWorkshop : MonoBehaviour
 
             if (screen == Screen.Edit)
             {
+                if (!string.IsNullOrEmpty(armedCatalogId))
+                {
+                    armedCatalogId = null;
+                    palettePressId = null;
+                    RefreshPaletteHighlight();
+                    if (statusText != null) statusText.text = "Placement cancelled.";
+                    return;
+                }
+
                 ReturnToMenu();
                 return;
             }
@@ -180,6 +192,44 @@ public class MapWorkshop : MonoBehaviour
     {
         if (Mouse.current == null || Camera.main == null || MapSession.workingCopy == null) return;
 
+        if (!string.IsNullOrEmpty(palettePressId) && Mouse.current.leftButton.wasReleasedThisFrame)
+        {
+            string id = palettePressId;
+            palettePressId = null;
+            if (!OverEditorPanel())
+            {
+                if (PlacePalettePiece(id))
+                {
+                    armedCatalogId = null;
+                    if (statusText != null) statusText.text = "Placed " + DecorationCatalog.DisplayName(id) + ". It stays when you dress again.";
+                }
+                else
+                {
+                    armedCatalogId = id;
+                }
+            }
+            else if (armedCatalogId == id)
+            {
+                armedCatalogId = null;
+                if (statusText != null) statusText.text = "Placement cancelled.";
+            }
+            else
+            {
+                armedCatalogId = id;
+                if (statusText != null) statusText.text = "Click the map to place " + DecorationCatalog.DisplayName(id) + ". Click it again or press Esc to stop.";
+            }
+
+            RefreshPaletteHighlight();
+            return;
+        }
+
+        if (!string.IsNullOrEmpty(armedCatalogId) && Mouse.current.leftButton.wasPressedThisFrame && !PointerOverUi())
+        {
+            if (PlacePalettePiece(armedCatalogId) && statusText != null)
+                statusText.text = "Placed " + DecorationCatalog.DisplayName(armedCatalogId) + ". Click again for another, or press Esc to stop.";
+            return;
+        }
+
         if (Mouse.current.leftButton.wasPressedThisFrame && !PointerOverUi())
         {
             dragHandle = PickHandle(Mouse.current.position.ReadValue());
@@ -262,6 +312,13 @@ public class MapWorkshop : MonoBehaviour
     {
         if (EventSystem.current == null || Mouse.current == null) return false;
         return EventSystem.current.IsPointerOverGameObject(Mouse.current.deviceId);
+    }
+
+    bool OverEditorPanel()
+    {
+        if (sidePanel == null || !sidePanel.activeInHierarchy || Mouse.current == null) return false;
+        RectTransform rect = sidePanel.GetComponent<RectTransform>();
+        return RectTransformUtility.RectangleContainsScreenPoint(rect, Mouse.current.position.ReadValue(), null);
     }
 
     void ShowModeSelect()
@@ -400,7 +457,7 @@ public class MapWorkshop : MonoBehaviour
         ClearSidePanel();
         PlayableMapDefinition map = MapSession.workingCopy;
         AddTitle(map != null ? map.mapName : "Edit map");
-        AddBody("Drag the white borders to resize sectors. Drag a gold point to move a control point, and a red or blue marker to move a spawn. Gold spheres on the market pieces move them, and the small red spheres delete them. Population chooses how many pieces each sector tries to place. Dress again replaces only the pieces you have not moved. Changing the counts below rebuilds a fresh layout and keeps the name. Save asks you what to call this map. WASD moves the camera. Q and E zoom.");
+        AddBody("Drag borders, gold points, and the red or blue spawns. Population sets how many pieces each sector tries to place. Click a piece in the list, then click the map to place it. Click that piece again, or press Esc, to stop. A placed piece stays when you dress again. Changing the counts rebuilds the layout and keeps the name.");
         AddStepper("Sectors", draftSectorCount, 1, 6, SetEditSectorCount);
         for (int i = 0; i < draftSectorCount && i < draftPoints.Count; i++)
         {
@@ -410,6 +467,7 @@ public class MapWorkshop : MonoBehaviour
 
         int density = map != null ? map.decorationDensity : 8;
         AddDensitySlider(density);
+        AddPalette();
 
         var row = AddRow();
         AddButton(row.transform, "Auto centre all", CentreAll);
@@ -745,7 +803,23 @@ public class MapWorkshop : MonoBehaviour
         map.SetDecorationDensity(density);
         MapSession.workingCopyDirty = true;
         if (builder != null) builder.Sync();
-        if (statusText != null) statusText.text = "Population " + density + " per sector. Pieces you moved stay put. Save keeps this level.";
+        if (statusText != null) statusText.text = "Population " + density + " per sector. Pieces you moved or placed stay put. Save keeps this level.";
+    }
+
+    bool PlacePalettePiece(string catalogId)
+    {
+        PlayableMapDefinition map = MapSession.workingCopy;
+        if (map == null || Mouse.current == null) return false;
+        Vector3 world = GroundPoint(Mouse.current.position.ReadValue());
+        if (!map.TryPlaceKeptDecoration(catalogId, world))
+        {
+            if (statusText != null) statusText.text = "Drop the piece inside the map.";
+            return false;
+        }
+
+        MapSession.workingCopyDirty = true;
+        if (builder != null) builder.Sync();
+        return true;
     }
 
     void DressMapAgain()
@@ -904,6 +978,7 @@ public class MapWorkshop : MonoBehaviour
 
         nameInput = null;
         statusText = null;
+        paletteChoices.Clear();
         ApplyMenuLayout();
     }
 
@@ -1008,6 +1083,123 @@ public class MapWorkshop : MonoBehaviour
             Text text = button.GetComponentInChildren<Text>();
             if (text != null) text.text = label + "\n<size=14>" + caption + "</size>";
         }
+    }
+
+    void AddPalette()
+    {
+        paletteChoices.Clear();
+        Text heading = AddTextOn(sidePanel.transform, "Pieces", 18);
+        heading.alignment = TextAnchor.MiddleLeft;
+
+        GameObject scrollObject = new GameObject("Palette");
+        scrollObject.transform.SetParent(sidePanel.transform, false);
+        LayoutElement scrollLayout = scrollObject.AddComponent<LayoutElement>();
+        scrollLayout.minHeight = 168f;
+        scrollLayout.preferredHeight = 168f;
+        scrollLayout.flexibleHeight = 0f;
+        Image background = scrollObject.AddComponent<Image>();
+        background.color = new Color(0.1f, 0.12f, 0.15f, 1f);
+
+        ScrollRect scroll = scrollObject.AddComponent<ScrollRect>();
+        scroll.horizontal = false;
+        scroll.vertical = true;
+        scroll.movementType = ScrollRect.MovementType.Clamped;
+        scroll.scrollSensitivity = 28f;
+
+        GameObject viewport = new GameObject("Viewport");
+        viewport.transform.SetParent(scrollObject.transform, false);
+        RectTransform viewportRect = viewport.AddComponent<RectTransform>();
+        viewportRect.anchorMin = Vector2.zero;
+        viewportRect.anchorMax = Vector2.one;
+        viewportRect.offsetMin = new Vector2(6f, 6f);
+        viewportRect.offsetMax = new Vector2(-6f, -6f);
+        viewport.AddComponent<RectMask2D>();
+        scroll.viewport = viewportRect;
+
+        GameObject content = new GameObject("Content");
+        content.transform.SetParent(viewport.transform, false);
+        RectTransform contentRect = content.AddComponent<RectTransform>();
+        contentRect.anchorMin = new Vector2(0f, 1f);
+        contentRect.anchorMax = new Vector2(1f, 1f);
+        contentRect.pivot = new Vector2(0.5f, 1f);
+        contentRect.anchoredPosition = Vector2.zero;
+        contentRect.sizeDelta = new Vector2(0f, 0f);
+        VerticalLayoutGroup contentLayout = content.AddComponent<VerticalLayoutGroup>();
+        contentLayout.spacing = 4f;
+        contentLayout.childAlignment = TextAnchor.UpperLeft;
+        contentLayout.childControlWidth = true;
+        contentLayout.childControlHeight = true;
+        contentLayout.childForceExpandWidth = true;
+        contentLayout.childForceExpandHeight = false;
+        ContentSizeFitter contentFitter = content.AddComponent<ContentSizeFitter>();
+        contentFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+        contentFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+        scroll.content = contentRect;
+
+        string lastGroup = null;
+        for (int i = 0; i < DecorationCatalog.Entries.Length; i++)
+        {
+            DecorationCatalog.Entry entry = DecorationCatalog.Entries[i];
+            if (entry.groupName != lastGroup)
+            {
+                lastGroup = entry.groupName;
+                Text header = AddTextOn(content.transform, entry.groupName, 15);
+                header.alignment = TextAnchor.MiddleLeft;
+                LayoutElement headerLayout = header.GetComponent<LayoutElement>();
+                if (headerLayout != null) headerLayout.minHeight = 22f;
+            }
+
+            AddPaletteButton(content.transform, entry);
+        }
+    }
+
+    void AddPaletteButton(Transform parent, DecorationCatalog.Entry entry)
+    {
+        GameObject buttonObject = new GameObject(entry.displayName);
+        buttonObject.transform.SetParent(parent, false);
+        Image image = buttonObject.AddComponent<Image>();
+        image.color = PaletteColor(entry.id);
+        LayoutElement layout = buttonObject.AddComponent<LayoutElement>();
+        layout.minHeight = 32f;
+        layout.preferredHeight = 32f;
+
+        GameObject textObject = new GameObject("Label");
+        textObject.transform.SetParent(buttonObject.transform, false);
+        Text text = textObject.AddComponent<Text>();
+        text.font = BuiltinFont();
+        text.text = entry.displayName;
+        text.fontSize = 16;
+        text.alignment = TextAnchor.MiddleLeft;
+        text.color = Color.white;
+        Stretch(textObject, 10f);
+
+        string id = entry.id;
+        EventTrigger trigger = buttonObject.AddComponent<EventTrigger>();
+        EventTrigger.Entry down = new EventTrigger.Entry { eventID = EventTriggerType.PointerDown };
+        down.callback.AddListener(_ => palettePressId = id);
+        trigger.triggers.Add(down);
+        paletteChoices.Add(new PaletteChoice { id = id, image = image });
+    }
+
+    void RefreshPaletteHighlight()
+    {
+        for (int i = 0; i < paletteChoices.Count; i++)
+        {
+            if (paletteChoices[i].image != null)
+                paletteChoices[i].image.color = PaletteColor(paletteChoices[i].id);
+        }
+    }
+
+    Color PaletteColor(string id)
+    {
+        if (id == armedCatalogId) return new Color(0.55f, 0.48f, 0.22f, 1f);
+        return new Color(0.18f, 0.22f, 0.28f, 1f);
+    }
+
+    class PaletteChoice
+    {
+        public string id;
+        public Image image;
     }
 
     void AddDensitySlider(int value)

@@ -311,13 +311,8 @@ public class PlayableMapBuilder
 
     static GameObject CreateDecorationModel(string catalogId)
     {
-        string modelName = catalogId switch
-        {
-            "parasol-a" => "detail-parasol-a",
-            "parasol-b" => "detail-parasol-b",
-            "awning" => "detail-awning",
-            _ => "low-detail-building-n"
-        };
+        DecorationCatalog.Entry entry = DecorationCatalog.Find(catalogId);
+        string modelName = string.IsNullOrEmpty(entry.modelFileName) ? catalogId : entry.modelFileName;
 
 #if UNITY_EDITOR
         GameObject prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(

@@ -349,9 +349,36 @@ public class PlayableMapDefinition
         decoration.Remove(piece);
     }
 
+    public bool TryPlaceKeptDecoration(string catalogId, Vector3 world)
+    {
+        Normalize();
+        if (string.IsNullOrEmpty(DecorationCatalog.Find(catalogId).id)) return false;
+        if (sectors.Count == 0) return false;
+
+        float minZ = sectors[0].minZ;
+        float maxZ = sectors[sectors.Count - 1].maxZ;
+        if (world.x < minX || world.x > maxX || world.z < minZ || world.z > maxZ) return false;
+
+        int sectorIndex = SectorIndexAt(world.z);
+        if (sectorIndex < 0) return false;
+
+        decoration.Add(new PlayableDecorationPiece
+        {
+            pieceId = NextDecorationId(sectorIndex, decoration.Count),
+            sectorIndex = sectorIndex,
+            catalogId = catalogId,
+            position = ClampInside(sectorIndex, world),
+            yaw = 0f,
+            kept = true
+        });
+        decorationGenerated = true;
+        return true;
+    }
+
     void AddGeneratedDecoration()
     {
-        string[] catalog = { "parasol-a", "parasol-b", "awning", "kiosk" };
+        DecorationCatalog.Entry[] catalog = DecorationCatalog.AutoDressEntries();
+        if (catalog.Length == 0) return;
         for (int sectorIndex = 0; sectorIndex < sectors.Count; sectorIndex++)
         {
             PlayableSectorDefinition sector = sectors[sectorIndex];
@@ -394,7 +421,7 @@ public class PlayableMapDefinition
                 {
                     pieceId = NextDecorationId(sectorIndex, placed),
                     sectorIndex = sectorIndex,
-                    catalogId = catalog[random.Next(catalog.Length)],
+                    catalogId = catalog[random.Next(catalog.Length)].id,
                     position = spots[i],
                     yaw = random.Next(0, 8) * 45f,
                     kept = false
