@@ -26,10 +26,19 @@ public class PlayableSectorDefinition
 }
 
 [Serializable]
+public class PlayableRoadSegment
+{
+    public string roadId;
+    public Vector3 start;
+    public Vector3 end;
+}
+
+[Serializable]
 public class PlayableMapDefinition
 {
     public const float MinDepth = 30f;
     public const float MinWidth = 28f;
+    public const float SpineRoadWidth = 8f;
 
     public string mapName = "Untitled Map";
     public float minX = -20f;
@@ -37,6 +46,7 @@ public class PlayableMapDefinition
     public List<PlayableSectorDefinition> sectors = new List<PlayableSectorDefinition>();
     public List<PlayableDecorationPiece> decoration = new List<PlayableDecorationPiece>();
     public List<Vector3> decorationBlocks = new List<Vector3>();
+    public List<PlayableRoadSegment> roads = new List<PlayableRoadSegment>();
     public const int MinDecorationDensity = 1;
     public const int MaxDecorationDensity = 20;
 
@@ -108,6 +118,7 @@ public class PlayableMapDefinition
         if (sectors == null) sectors = new List<PlayableSectorDefinition>();
         if (decoration == null) decoration = new List<PlayableDecorationPiece>();
         if (decorationBlocks == null) decorationBlocks = new List<Vector3>();
+        if (roads == null) roads = new List<PlayableRoadSegment>();
         if (decorationDensity < MinDecorationDensity)
             decorationDensity = decorationGenerated ? 3 : 8;
         decorationDensity = Mathf.Clamp(decorationDensity, MinDecorationDensity, MaxDecorationDensity);
@@ -349,6 +360,69 @@ public class PlayableMapDefinition
         decoration.Remove(piece);
     }
 
+    public bool TryAddRoad(Vector3 start, Vector3 end)
+    {
+        Normalize();
+        if (sectors.Count == 0) return false;
+
+        Vector3 from = ClampToMap(start);
+        Vector3 to = ClampToMap(end);
+        if (Mathf.Abs(to.x - from.x) >= Mathf.Abs(to.z - from.z)) to.z = from.z;
+        else to.x = from.x;
+        if (Vector3.Distance(from, to) < 8f) return false;
+
+        roads.Add(new PlayableRoadSegment
+        {
+            roadId = NextRoadId(),
+            start = from,
+            end = to
+        });
+        return true;
+    }
+
+    public void RemoveRoad(string roadId)
+    {
+        if (string.IsNullOrEmpty(roadId) || roads == null) return;
+        for (int i = roads.Count - 1; i >= 0; i--)
+        {
+            if (roads[i] != null && roads[i].roadId == roadId) roads.RemoveAt(i);
+        }
+    }
+
+    Vector3 ClampToMap(Vector3 world)
+    {
+        float minZ = sectors[0].minZ;
+        float maxZ = sectors[sectors.Count - 1].maxZ;
+        world.x = Mathf.Clamp(world.x, minX, maxX);
+        world.y = 0f;
+        world.z = Mathf.Clamp(world.z, minZ, maxZ);
+        return world;
+    }
+
+    string NextRoadId()
+    {
+        int index = roads.Count;
+        string id = "road-" + index;
+        while (FindRoad(id) != null)
+        {
+            index++;
+            id = "road-" + index;
+        }
+
+        return id;
+    }
+
+    PlayableRoadSegment FindRoad(string roadId)
+    {
+        if (roads == null) return null;
+        for (int i = 0; i < roads.Count; i++)
+        {
+            if (roads[i] != null && roads[i].roadId == roadId) return roads[i];
+        }
+
+        return null;
+    }
+
     public bool TryPlaceKeptDecoration(string catalogId, Vector3 world)
     {
         Normalize();
@@ -457,6 +531,20 @@ public class PlayableMapDefinition
             }
         }
 
+        float roadCenterX = (minX + maxX) * 0.5f;
+        if (Mathf.Abs(spot.x - roadCenterX) < (SpineRoadWidth * 0.5f) + 1.5f) return false;
+        if (roads != null)
+        {
+            for (int i = 0; i < roads.Count; i++)
+            {
+                PlayableRoadSegment road = roads[i];
+                if (road == null) continue;
+                bool alongX = Mathf.Abs(road.end.x - road.start.x) >= Mathf.Abs(road.end.z - road.start.z);
+                float halfWidth = alongX ? 3f : SpineRoadWidth * 0.5f;
+                if (DistanceToSegment(spot, road.start, road.end) < halfWidth + 1.5f) return false;
+            }
+        }
+
         for (int i = 0; i < decoration.Count; i++)
         {
             if (decoration[i] != null && Vector3.Distance(Flat(spot), Flat(decoration[i].position)) < 4.6f) return false;
@@ -484,5 +572,16 @@ public class PlayableMapDefinition
     {
         point.y = 0f;
         return point;
+    }
+
+    static float DistanceToSegment(Vector3 point, Vector3 start, Vector3 end)
+    {
+        Vector3 from = Flat(start);
+        Vector3 to = Flat(end);
+        Vector3 offset = to - from;
+        float lengthSq = offset.sqrMagnitude;
+        if (lengthSq < 0.01f) return Vector3.Distance(Flat(point), from);
+        float t = Mathf.Clamp01(Vector3.Dot(Flat(point) - from, offset) / lengthSq);
+        return Vector3.Distance(Flat(point), from + (offset * t));
     }
 }

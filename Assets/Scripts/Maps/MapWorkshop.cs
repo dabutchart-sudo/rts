@@ -29,6 +29,9 @@ public class MapWorkshop : MonoBehaviour
     string armedCatalogId;
     string palettePressId;
     readonly List<PaletteChoice> paletteChoices = new List<PaletteChoice>();
+    bool layingRoad;
+    bool roadStartSet;
+    Vector3 roadStart;
 
     string draftName = "Blank Map";
     int draftSectorCount = 3;
@@ -81,6 +84,12 @@ public class MapWorkshop : MonoBehaviour
 
             if (screen == Screen.Edit)
             {
+                if (layingRoad)
+                {
+                    CancelRoadLay(true);
+                    return;
+                }
+
                 if (!string.IsNullOrEmpty(armedCatalogId))
                 {
                     armedCatalogId = null;
@@ -215,6 +224,7 @@ public class MapWorkshop : MonoBehaviour
             }
             else
             {
+                CancelRoadLay(false);
                 armedCatalogId = id;
                 if (statusText != null) statusText.text = "Click the map to place " + DecorationCatalog.DisplayName(id) + ". Click it again or press Esc to stop.";
             }
@@ -237,6 +247,41 @@ public class MapWorkshop : MonoBehaviour
             {
                 RemoveDecorationPiece(dragHandle.decorationId);
                 dragHandle = null;
+                return;
+            }
+
+            if (dragHandle != null && dragHandle.kind == MapEditHandle.Kind.PlacedRoadRemove)
+            {
+                RemovePlacedRoad(dragHandle.decorationId);
+                dragHandle = null;
+                return;
+            }
+
+            if (layingRoad)
+            {
+                Vector3 world = GroundPoint(Mouse.current.position.ReadValue());
+                if (!roadStartSet)
+                {
+                    roadStart = world;
+                    roadStartSet = true;
+                    if (builder != null) builder.SetRoadDraft(true, world);
+                    if (statusText != null) statusText.text = "Click the other end. The road stays straight.";
+                }
+                else if (MapSession.workingCopy.TryAddRoad(roadStart, world))
+                {
+                    roadStartSet = false;
+                    if (builder != null) builder.SetRoadDraft(false, world);
+                    MapSession.workingCopyDirty = true;
+                    builder.Sync();
+                    if (statusText != null) statusText.text = "Road added. Click the next start, or press Esc to stop.";
+                }
+                else if (statusText != null)
+                {
+                    statusText.text = "That road is too short. Click a farther end.";
+                }
+
+                dragHandle = null;
+                return;
             }
         }
 
@@ -457,7 +502,7 @@ public class MapWorkshop : MonoBehaviour
         ClearSidePanel();
         PlayableMapDefinition map = MapSession.workingCopy;
         AddTitle(map != null ? map.mapName : "Edit map");
-        AddBody("Drag borders, gold points, and the red or blue spawns. Population sets how many pieces each sector tries to place. Click a piece in the list, then click the map to place it. Click that piece again, or press Esc, to stop. A placed piece stays when you dress again. Changing the counts rebuilds the layout and keeps the name.");
+        AddBody("Drag borders, gold points, and the red or blue spawns. Population sets how many pieces each sector tries to place. Click a piece in the list, then click the map to place it. Lay road uses two clicks and keeps the road straight. The centre road stays. A red sphere deletes a road you added. Press Esc to stop placing.");
         AddStepper("Sectors", draftSectorCount, 1, 6, SetEditSectorCount);
         for (int i = 0; i < draftSectorCount && i < draftPoints.Count; i++)
         {
@@ -472,6 +517,7 @@ public class MapWorkshop : MonoBehaviour
         var row = AddRow();
         AddButton(row.transform, "Auto centre all", CentreAll);
         AddButton(row.transform, "Dress again", DressMapAgain);
+        AddButton(row.transform, "Lay road", ToggleLayRoad);
         row = AddRow();
         AddButton(row.transform, "Save", ShowNameAndSave);
         AddButton(row.transform, "Play", PlayWorkingCopy);
@@ -555,6 +601,7 @@ public class MapWorkshop : MonoBehaviour
 
     void PlayWorkingCopy()
     {
+        CancelRoadLay(false);
         CommitName();
         if (MapSession.workingCopy == null) return;
         if (MapSession.selectedId == MapSession.OriginalId) MapSession.selectedId = MapSession.UnsavedId;
@@ -564,6 +611,7 @@ public class MapWorkshop : MonoBehaviour
 
     void QuickTestWorkingCopy()
     {
+        CancelRoadLay(false);
         CommitName();
         if (MapSession.workingCopy == null) return;
         if (MapSession.selectedId == MapSession.OriginalId) MapSession.selectedId = MapSession.UnsavedId;
@@ -639,6 +687,7 @@ public class MapWorkshop : MonoBehaviour
 
     void ReturnToMenu()
     {
+        CancelRoadLay(false);
         Time.timeScale = 1f;
         MapSession.phase = MapSession.Phase.Menu;
         MapSession.returnAfterMatch = false;
@@ -839,6 +888,39 @@ public class MapWorkshop : MonoBehaviour
         MapSession.workingCopyDirty = true;
         if (builder != null) builder.Sync();
         if (statusText != null) statusText.text = "Piece removed. Dress again will not put one back on that spot.";
+    }
+
+    void ToggleLayRoad()
+    {
+        if (layingRoad)
+        {
+            CancelRoadLay(true);
+            return;
+        }
+
+        layingRoad = true;
+        roadStartSet = false;
+        armedCatalogId = null;
+        palettePressId = null;
+        RefreshPaletteHighlight();
+        if (statusText != null) statusText.text = "Click one end of the road, then the other. It stays straight. Esc stops.";
+    }
+
+    void CancelRoadLay(bool announce)
+    {
+        layingRoad = false;
+        roadStartSet = false;
+        if (builder != null) builder.SetRoadDraft(false, Vector3.zero);
+        if (announce && statusText != null) statusText.text = "Road laying cancelled.";
+    }
+
+    void RemovePlacedRoad(string roadId)
+    {
+        if (MapSession.workingCopy == null) return;
+        MapSession.workingCopy.RemoveRoad(roadId);
+        MapSession.workingCopyDirty = true;
+        if (builder != null) builder.Sync();
+        if (statusText != null) statusText.text = "Road removed. The centre road stays.";
     }
 
     void SetMatchChrome(bool showReadout, bool showCommands)

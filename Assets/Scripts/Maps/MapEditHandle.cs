@@ -11,7 +11,8 @@ public class MapEditHandle : MonoBehaviour
         AttackerSpawn,
         DefenderSpawn,
         Decoration,
-        DecorationRemove
+        DecorationRemove,
+        PlacedRoadRemove
     }
 
     public Kind kind;

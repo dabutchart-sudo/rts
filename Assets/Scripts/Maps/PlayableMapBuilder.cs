@@ -38,6 +38,12 @@ public class PlayableMapBuilder
     Transform widthMin;
     Transform widthMax;
     Transform decorationRoot;
+    Transform verge;
+    Transform spineRoad;
+    Transform spineLine;
+    Transform placedRoadRoot;
+    Transform roadDraft;
+    readonly List<Transform> crossRoads = new List<Transform>();
     Sector[] wired;
 
     class BuiltSector
@@ -93,9 +99,15 @@ public class PlayableMapBuilder
         widthMin = null;
         widthMax = null;
         decorationRoot = null;
+        verge = null;
+        spineRoad = null;
+        spineLine = null;
+        placedRoadRoot = null;
+        roadDraft = null;
         wired = null;
         built.Clear();
         depthHandles.Clear();
+        crossRoads.Clear();
     }
 
     public void Build(PlayableMapDefinition definition, bool editing)
@@ -106,7 +118,17 @@ public class PlayableMapBuilder
         map.Normalize();
 
         root = new GameObject(RootName);
-        ground = CreateCube("Ground", root.transform, new Color(0.24f, 0.27f, 0.22f)).transform;
+        ground = CreateCube("Ground", root.transform, new Color(0.30f, 0.32f, 0.26f)).transform;
+        verge = CreateSurface("Verge", root.transform, new Color(0.20f, 0.24f, 0.18f));
+        spineRoad = CreateSurface("Spine Road", root.transform, new Color(0.16f, 0.16f, 0.15f));
+        spineLine = CreateSurface("Spine Line", root.transform, new Color(0.75f, 0.72f, 0.55f));
+        for (int crossing = 1; crossing < map.sectors.Count; crossing++)
+        {
+            crossRoads.Add(CreateSurface("Crossing " + crossing, root.transform, new Color(0.16f, 0.16f, 0.15f)));
+        }
+
+        roadDraft = CreateSurface("Road Draft", root.transform, new Color(0.95f, 0.85f, 0.35f));
+        roadDraft.gameObject.SetActive(false);
 
         for (int i = 0; i < map.sectors.Count; i++)
         {
@@ -162,6 +184,34 @@ public class PlayableMapBuilder
 
         ground.position = new Vector3(centerX, -0.25f, centerZ);
         ground.localScale = new Vector3(width, 0.5f, depth);
+        if (verge != null)
+        {
+            verge.position = new Vector3(centerX, -0.2f, centerZ);
+            verge.localScale = new Vector3(width + 16f, 0.2f, depth + 16f);
+        }
+
+        if (spineRoad != null)
+        {
+            spineRoad.position = new Vector3(centerX, 0.24f, centerZ);
+            spineRoad.localScale = new Vector3(PlayableMapDefinition.SpineRoadWidth, 0.05f, depth);
+        }
+
+        if (spineLine != null)
+        {
+            spineLine.position = new Vector3(centerX, 0.28f, centerZ);
+            spineLine.localScale = new Vector3(0.4f, 0.03f, Mathf.Max(1f, depth - 2f));
+        }
+
+        for (int i = 0; i < crossRoads.Count; i++)
+        {
+            int boundary = i + 1;
+            if (boundary >= map.sectors.Count) break;
+            float edgeZ = map.sectors[boundary - 1].maxZ;
+            crossRoads[i].position = new Vector3(centerX, 0.24f, edgeZ);
+            crossRoads[i].localScale = new Vector3(width, 0.05f, 6f);
+        }
+
+        SyncPlacedRoads();
 
         for (int i = 0; i < built.Count; i++)
         {
@@ -243,6 +293,105 @@ public class PlayableMapBuilder
                 Transform remove = piece.Find("Remove");
                 if (remove != null) remove.gameObject.SetActive(editing);
             }
+        }
+
+        if (placedRoadRoot != null)
+        {
+            for (int i = 0; i < placedRoadRoot.childCount; i++)
+            {
+                Transform remove = placedRoadRoot.GetChild(i).Find("Remove");
+                if (remove != null) remove.gameObject.SetActive(editing);
+            }
+        }
+
+        if (!editing && roadDraft != null) roadDraft.gameObject.SetActive(false);
+    }
+
+    public void SetRoadDraft(bool visible, Vector3 world)
+    {
+        if (roadDraft == null) return;
+        roadDraft.gameObject.SetActive(visible);
+        if (!visible) return;
+        roadDraft.position = new Vector3(world.x, 1.2f, world.z);
+        roadDraft.localScale = new Vector3(1.4f, 1.4f, 1.4f);
+    }
+
+    void SyncPlacedRoads()
+    {
+        if (root == null || map == null) return;
+        map.Normalize();
+        if (placedRoadRoot == null)
+        {
+            var roadObject = new GameObject("Placed Roads");
+            roadObject.transform.SetParent(root.transform, false);
+            placedRoadRoot = roadObject.transform;
+        }
+
+        var alive = new HashSet<string>();
+        for (int i = 0; i < map.roads.Count; i++)
+        {
+            PlayableRoadSegment road = map.roads[i];
+            if (road == null || string.IsNullOrEmpty(road.roadId)) continue;
+            alive.Add(road.roadId);
+            Transform visual = placedRoadRoot.Find(road.roadId);
+            if (visual == null) visual = CreatePlacedRoad(road.roadId);
+            PosePlacedRoad(visual, road);
+        }
+
+        for (int i = placedRoadRoot.childCount - 1; i >= 0; i--)
+        {
+            Transform child = placedRoadRoot.GetChild(i);
+            if (!alive.Contains(child.name)) Object.Destroy(child.gameObject);
+        }
+    }
+
+    Transform CreatePlacedRoad(string roadId)
+    {
+        var visual = new GameObject(roadId);
+        visual.transform.SetParent(placedRoadRoot, false);
+        CreateSurface("Slab", visual.transform, new Color(0.16f, 0.16f, 0.15f));
+        CreateSurface("Line", visual.transform, new Color(0.75f, 0.72f, 0.55f));
+
+        GameObject handle = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        handle.name = "Remove";
+        handle.transform.SetParent(visual.transform, false);
+        Paint(handle, new Color(0.85f, 0.2f, 0.18f));
+        MapEditHandle marker = handle.AddComponent<MapEditHandle>();
+        marker.kind = MapEditHandle.Kind.PlacedRoadRemove;
+        marker.decorationId = roadId;
+        return visual.transform;
+    }
+
+    static void PosePlacedRoad(Transform visual, PlayableRoadSegment road)
+    {
+        bool alongX = Mathf.Abs(road.end.x - road.start.x) >= Mathf.Abs(road.end.z - road.start.z);
+        Vector3 middle = (road.start + road.end) * 0.5f;
+        float length = Mathf.Max(1f, Vector3.Distance(road.start, road.end));
+        float width = alongX ? 6f : PlayableMapDefinition.SpineRoadWidth;
+
+        Transform slab = visual.Find("Slab");
+        if (slab != null)
+        {
+            slab.position = new Vector3(middle.x, 0.24f, middle.z);
+            slab.localScale = alongX
+                ? new Vector3(length, 0.05f, width)
+                : new Vector3(width, 0.05f, length);
+        }
+
+        Transform line = visual.Find("Line");
+        if (line != null)
+        {
+            line.position = new Vector3(middle.x, 0.28f, middle.z);
+            line.localScale = alongX
+                ? new Vector3(Mathf.Max(1f, length - 1f), 0.03f, 0.4f)
+                : new Vector3(0.4f, 0.03f, Mathf.Max(1f, length - 1f));
+        }
+
+        Transform remove = visual.Find("Remove");
+        if (remove != null)
+        {
+            remove.position = new Vector3(middle.x, 1.6f, middle.z);
+            remove.localScale = new Vector3(1.2f, 1.2f, 1.2f);
         }
     }
 
@@ -613,6 +762,13 @@ public class PlayableMapBuilder
         cube.transform.SetParent(parent, false);
         Paint(cube, color);
         return cube;
+    }
+
+    static Transform CreateSurface(string objectName, Transform parent, Color color)
+    {
+        GameObject surface = CreateCube(objectName, parent, color);
+        RemoveCollider(surface);
+        return surface.transform;
     }
 
     static void Paint(GameObject target, Color color)

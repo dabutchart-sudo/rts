@@ -40,7 +40,7 @@ The repository contains a playable prototype, but it has not yet passed a docume
 - The saved front-line behaviour is in the current match: a garrison stays on a taken point, survivors carry forward up to a cap of 16, capture is slower, and attackers wait on their own side of the line instead of being moved into the next sector. On 22 Sep 2026 a played match ran through to a result. Specialist abilities, combat effects, and squad routes are not part of this pass.
 - One played match has reached a result. Original, both results, and Auto, Assist, and Manual were accepted in play on 22 Sep 2026.
 - The single main scene and several map-related feature branches need consolidation.
-- The opening menu of wide rows on black, including ChatGPT Map and Unit Sandbox, was accepted on 23 Sep 2026. The Market preview is still a look check, not a playable Breakthrough map. Saved layouts dress themselves with Market pieces. A population slider from 1 to 20 sets how full each sector is. The editor palette lists every placeable piece, and that list is where new pieces and future groups are added. Placing or moving a piece keeps it, deleting one blocks that spot, and Dress again only replaces pieces you have not kept. Roads, ground materials, and other district rules are still later.
+- The opening menu of wide rows on black, including ChatGPT Map and Unit Sandbox, was accepted on 23 Sep 2026. The Market preview is still a look check, not a playable Breakthrough map. Saved layouts sit on a verge with a centre road, a crossing between sectors, and any extra straight roads you lay. They also dress themselves with Market pieces. A population slider from 1 to 20 sets how full each sector is. The editor palette lists every placeable piece, and that list is where new pieces and future groups are added. Placing or moving a piece keeps it, deleting one blocks that spot, and Dress again only replaces pieces you have not kept. Other district rules are still later.
 - Some systems are runtime-created or loosely coupled; scene and prefab references may fail silently.
 - Balance values are prototype values, not release decisions.
 - Desktop mouse input exists; touch/mobile interaction is not complete.
@@ -63,7 +63,7 @@ The repository contains a playable prototype, but it has not yet passed a docume
 
 ## Roadmap
 
-The first slice of **Map Generation Phase 2** is in: Market dressing on a saved layout, a population slider, and a palette of pieces that can grow. The opening menu is accepted too. Roads, ground materials, and other district rules are the remaining decoration work. The milestones below stay after that.
+The first slice of **Map Generation Phase 2** now includes a verge, a default centre road with a crossing between sectors, extra roads you lay yourself, Market dressing, a population slider, and a palette. Added roads are straight runs along or across the map. Freer road shapes come later. Other district rules are the remaining decoration work. The milestones below stay after that.
 
 ### M1 — Stabilise the Breakthrough loop
 
@@ -108,7 +108,7 @@ The recipe asset is `Assets/Data/MapRecipes/Chapter1Market.asset`. Change sector
 
 1. Press Play on `SampleScene` in Unity 6000.5.7f1. The opening menu is a stack of rows on a black screen: **Play**, **Test**, **Edit**, **ChatGPT Map**, and **Unit Sandbox**. A match does not start on its own. ChatGPT Map is the greybox battlefield. Unit Sandbox is for trying units. Each of those scenes has a Main menu button back to this screen.
 2. Choose **Edit**, then **Create new**. The editor opens on a blank strip. Sector count and control points per sector are on that screen. Changing either rebuilds a fresh layout and keeps the name. **Auto centre all** recentres spawns and control points without changing sector sizes.
-3. Drag the white borders to resize sectors. Drag a gold marker to move a control point, and a red or blue marker to move that side's spawn.
+3. Drag the white borders to resize sectors. Drag a gold marker to move a control point, and a red or blue marker to move that side's spawn. A road runs down the middle, with a crossing on each join between sectors. **Lay road** adds another straight road with two clicks. A red sphere deletes a road you added. The centre road stays. Automatic dressing stays off the centre road and off roads you added. A piece you place yourself can sit on a road.
 4. Choose **Save**, type a name, and save again. That name is the file in `Assets/Data/Maps` and the name in the menu. **Main menu**, then **Edit**, lists it. Opening it puts the borders and markers back, so you can drag them again. Original is listed for Play and Test, and it cannot be edited. The editor also dresses the map with Market pieces. **Population** runs from 1 to 20 and sets how many pieces each sector tries to place. **Pieces** lists the palette. Click one, then click the map to place it, or drag it off the list to drop one. A placed piece is kept. Drag the gold sphere on a piece to move it, or the small red sphere to delete it. **Dress again** replaces only the pieces you have not kept. Save stores that dressing, including the population level, with the map. New pieces are added to the palette list in `DecorationCatalog`.
 5. **Play** asks for Attacker or Defender, then a map. The match runs at normal speed with tickets and Auto, Assist, and Manual, so you can command your side. **Test** asks for a speed and how many matches, then a map. Those matches play themselves on that same map. When they finish, **Edit this map** stays on the map you just tested.
 
@@ -116,7 +116,7 @@ The recipe asset is `Assets/Data/MapRecipes/Chapter1Market.asset`. Change sector
 
 1. A played match on a workshop map has reached a result. Confirmed 22 Sep 2026. Original, both results, and Auto, Assist, and Manual were accepted the same day.
 2. The opening menu and the Market dressing, including the population slider, were accepted on 23 Sep 2026.
-3. The piece palette was accepted on 23 Sep 2026. It is one list, so more pieces and later groups can be added there. Next decoration step is ground and roads. Other district rules stay after that.
+3. The verge, centre road, crossings, and extra straight roads were accepted on 23 Sep 2026. Freer road shapes come later. Next are the other district looks, then the match milestones.
 
 ## Definition of done
 
