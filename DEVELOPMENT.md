@@ -25,6 +25,7 @@ The repository contains a playable prototype, but it has not yet passed a docume
 - click, box, and double-click squad selection;
 - direct movement orders and basic formations;
 - health, targeting, projectiles, effects, and range indicators;
+- directional cover on a waist-high barricade: three spots on each face, protection only from the far side. Infantry in a match step into a nearby spot while fighting a point, and leave it if flanked, ordered away, or set to Manual. Tanks do not.
 - XP pools, unit store UI, base ownership, and AI purchasing;
 - capture, ticket, XP, victory, and transition UI;
 - AI diagnostics, match balance logging, screenshots, and accelerated batch-test support.
@@ -40,7 +41,7 @@ The repository contains a playable prototype, but it has not yet passed a docume
 - The saved front-line behaviour is in the current match: a garrison stays on a taken point, survivors carry forward up to a cap of 16, capture is slower, and attackers wait on their own side of the line instead of being moved into the next sector. On 22 Sep 2026 a played match ran through to a result. Specialist abilities, combat effects, and squad routes are not part of this pass.
 - One played match has reached a result. Original, both results, and Auto, Assist, and Manual were accepted in play on 22 Sep 2026.
 - The single main scene and several map-related feature branches need consolidation.
-- The opening menu of wide rows on black, including ChatGPT Map and Unit Sandbox, was accepted on 23 Sep 2026. The Market preview is still a look check, not a playable Breakthrough map. Saved layouts sit on a verge with a centre road, a crossing between sectors, and any extra straight roads you lay. They also dress themselves. Each sector is a market or a farm. The farm look is simple shapes for now: crop rows, hay, fences, barns, and silos. A population slider from 1 to 20 sets how full each sector is. The editor palette lists every placeable piece, and that list is where new pieces and future groups are added. Placing or moving a piece keeps it, deleting one blocks that spot, and Dress again only replaces pieces you have not kept. Other district rules are still later.
+- The opening menu of wide rows on black, including ChatGPT Map and Unit Sandbox, was accepted on 23 Sep 2026. The Market preview is still a look check, not a playable Breakthrough map. Saved layouts sit on a verge with a centre road, a crossing between sectors, and any extra straight roads you lay. They also dress themselves. Each sector is a market, a farm, an industrial yard, or an airport. The farm look is simple shapes for now: crop rows, hay, fences, barns, and silos. The industrial look is the same kind of simple shapes, kept to right angles and lined up: a warehouse on each side of the road, then containers and hard-standing in rows between the building and the road. There is no industrial model pack in the project yet. The airport look is the same kind of simple shapes, kept to right angles: hangar, runway slabs, planes, crates, barriers, lights, and a boxy fuel tank. A control tower and a terminal sit on the palette. A barricade can be placed by hand from the Cover group and is real cover in a match. In the editor, Turn left and Turn right rotate the selected piece by 45 degrees, and that angle is saved. A Main menu button stays at the bottom-left on every screen after the opening menu. A population slider from 1 to 20 sets how full each sector is. The editor palette lists every placeable piece, and that list is where new pieces and future groups are added. Placing or moving a piece keeps it, deleting one blocks that spot, and Dress again only replaces pieces you have not kept.
 - Some systems are runtime-created or loosely coupled; scene and prefab references may fail silently.
 - Balance values are prototype values, not release decisions.
 - Desktop mouse input exists; touch/mobile interaction is not complete.
@@ -63,7 +64,7 @@ The repository contains a playable prototype, but it has not yet passed a docume
 
 ## Roadmap
 
-The first slice of **Map Generation Phase 2** now includes a verge, roads, Market dressing, a simple Farm look per sector, a population slider, and a palette. Industrial and airport looks are the remaining decoration work. Freer road shapes come later. The milestones below stay after that.
+The first slice of **Map Generation Phase 2** now includes a verge, roads, Market dressing, a simple Farm look per sector, a simple right-angled Industrial yard per sector, a simple right-angled Airport look per sector, a population slider, and a palette. The industrial yard still needs a look check. Freer road shapes come later. The milestones below stay after that. A zoom slider sits in the bottom-right of the match screen.
 
 ### M1 — Stabilise the Breakthrough loop
 
@@ -106,17 +107,30 @@ The recipe asset is `Assets/Data/MapRecipes/Chapter1Market.asset`. Change sector
 
 ## Making a blank map
 
-1. Press Play on `SampleScene` in Unity 6000.5.7f1. The opening menu is a stack of rows on a black screen: **Play**, **Test**, **Edit**, **ChatGPT Map**, and **Unit Sandbox**. A match does not start on its own. ChatGPT Map is the greybox battlefield. Unit Sandbox is for trying units. Each of those scenes has a Main menu button back to this screen.
-2. Choose **Edit**, then **Create new**. The editor opens on a blank strip. One row is the sector count. Each sector then has its own row: how many control points, and whether that sector looks like a market or a farm. Changing the counts rebuilds a fresh layout and keeps the name. **Auto centre all** recentres spawns and control points without changing sector sizes.
+1. Press Play on `SampleScene` in Unity 6000.5.7f1. The opening menu is a stack of rows on a black screen: **Play**, **Test**, **Edit**, **ChatGPT Map**, and **Unit Sandbox**. A match does not start on its own. ChatGPT Map is the greybox battlefield. Unit Sandbox is for trying units. **Main menu** stays at the bottom-left on every screen after this one, including a match, and on those two scenes.
+2. Choose **Edit**, then **Create new**. The editor opens on a blank strip. One row is the sector count. Each sector then has its own row: how many control points, and whether that sector looks like a market, a farm, an industrial yard, or an airport. Changing the counts rebuilds a fresh layout and keeps the name. **Auto centre all** recentres spawns and control points without changing sector sizes.
 3. Drag the white borders to resize sectors. Drag a gold marker to move a control point, and a red or blue marker to move that side's spawn. A road runs down the middle, with a crossing on each join between sectors. **Lay road** adds another straight road with two clicks. A red sphere deletes a road you added. The centre road stays. Automatic dressing stays off the centre road and off roads you added. A piece you place yourself can sit on a road.
-4. Choose **Save**, type a name, and save again. That name is the file in `Assets/Data/Maps` and the name in the menu. **Main menu**, then **Edit**, lists it. Opening it puts the borders and markers back, so you can drag them again. Original is listed for Play and Test, and it cannot be edited. The editor also dresses the map with Market pieces. **Population** runs from 1 to 20 and sets how many pieces each sector tries to place. **Pieces** lists the palette. Click one, then click the map to place it, or drag it off the list to drop one. A placed piece is kept. Drag the gold sphere on a piece to move it, or the small red sphere to delete it. **Dress again** replaces only the pieces you have not kept. Save stores that dressing, including the population level, with the map. New pieces are added to the palette list in `DecorationCatalog`.
+4. Choose **Save**, type a name, and save again. That name is the file in `Assets/Data/Maps` and the name in the menu. **Main menu**, then **Edit**, lists it. Opening it puts the borders and markers back, so you can drag them again. Original is listed for Play and Test, and it cannot be edited. The editor also dresses the map with Market pieces. **Population** runs from 1 to 20 and sets how many pieces each sector tries to place. **Pieces** lists the palette, including **Barricade** under Cover. Click one, then click the map to place it, or drag it off the list to drop one. A placed piece is kept. Click a piece and drag it to move it. **Turn left** and **Turn right** appear at the top and rotate that piece by 45 degrees. Press Delete to remove the selected piece. **Dress again** replaces only the pieces you have not kept, and it does not add barricades. Save stores that dressing, including the population level and each piece's angle, with the map. New pieces are added to the palette list in `DecorationCatalog`.
 5. **Play** asks for Attacker or Defender, then a map. The match runs at normal speed with tickets and Auto, Assist, and Manual, so you can command your side. **Test** asks for a speed and how many matches, then a map. Those matches play themselves on that same map. When they finish, **Edit this map** stays on the map you just tested.
+
+## Soldier look test
+
+Temporary. This does not change the match, and it is not a decision about the art style.
+
+1. In Unity's menu bar, choose **RTS → Look → Soldier Uniform Test**.
+2. Press Play.
+3. Five soldiers walk a loop in modern kit. **Rifleman** (gold label) is the one with the most work: camouflage, vest, pouches, helmet, and a carried rifle. The others are a person built from blocks, a short thick miniature, a lighter operator, and a heavy gunner. A red capsule just off the path is what a soldier looks like in a match today.
+4. Right-drag to look around. The scroll wheel zooms. **Main menu** returns to the game.
 
 ## Immediate queue
 
 1. A played match on a workshop map has reached a result. Confirmed 22 Sep 2026. Original, both results, and Auto, Assist, and Manual were accepted the same day.
 2. The opening menu and the Market dressing, including the population slider, were accepted on 23 Sep 2026.
-3. The verge, centre road, crossings, and extra straight roads were accepted on 23 Sep 2026. Each sector can now be dressed as a market or a simple farm. Industrial and airport looks come after that. Freer road shapes stay later.
+3. The verge, centre road, crossings, and extra straight roads were accepted on 23 Sep 2026. Each sector can now be dressed as a market, a simple farm, a simple right-angled industrial yard, or a simple right-angled airport. The industrial yard still needs a look check. Freer road shapes stay later.
+4. The zoom slider was accepted on 28 Sep 2026. The airport look was accepted the same day. The editor list's gold scrollbar still needs a play check.
+5. Waist-high cover, including a barricade placed in the editor, was accepted on 28 Sep 2026. Infantry take a nearby spot while an enemy is in range of the point they are fighting, and leave it when flanked or ordered away.
+6. The bottom-left Main menu button, and turning a selected piece 45 degrees either way, were accepted on 28 Sep 2026.
+7. A temporary soldier look test is in `Assets/Scenes/SoldierLookDev.unity`. It is not part of the match and it is not a chosen art style. Five uniformed soldiers walk a loop. The gold label, Rifleman, is the detailed one. A red capsule beside the loop is today's match unit, for comparison.
 
 ## Definition of done
 

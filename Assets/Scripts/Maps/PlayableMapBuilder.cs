@@ -222,6 +222,8 @@ public class PlayableMapBuilder
             visual.tint.localScale = new Vector3(Mathf.Max(1f, width - 1.4f), 0.08f, Mathf.Max(1f, sectorDepth - 1.4f));
             Color tint = SectorColors[i % SectorColors.Length];
             if (sector.dressing == MapDistrictKind.Farm) tint = new Color(0.34f, 0.48f, 0.24f);
+            else if (sector.dressing == MapDistrictKind.Industrial) tint = new Color(0.40f, 0.38f, 0.35f);
+            else if (sector.dressing == MapDistrictKind.Airport) tint = new Color(0.62f, 0.63f, 0.60f);
             TintExisting(visual.tint.gameObject, tint);
             if (visual.label != null)
             {
@@ -268,7 +270,7 @@ public class PlayableMapBuilder
         }
 
         map.EnsureDecoration();
-        map.EnsureFarmLandmarks();
+        map.EnsureDistrictLandmarks();
         SyncDecoration();
     }
 
@@ -449,14 +451,28 @@ public class PlayableMapBuilder
 
         DecorationCatalog.Entry entry = DecorationCatalog.Find(piece.catalogId);
         float footprint = entry.footprint > 0.1f ? entry.footprint : 0.9f;
+        bool barricade = piece.catalogId == "barricade";
         BoxCollider obstacle = visual.AddComponent<BoxCollider>();
-        obstacle.center = new Vector3(0f, 0.25f, 0f);
-        obstacle.size = new Vector3(footprint, 0.5f, footprint);
+        if (barricade)
+        {
+            // Parent scale is 4, so this local box is a 4 x 0.5 x 1 wall sitting on the ground.
+            visual.tag = "Cover";
+            obstacle.center = new Vector3(0f, 0.0625f, 0f);
+            obstacle.size = new Vector3(1f, 0.125f, 0.25f);
+            CoverPiece cover = visual.AddComponent<CoverPiece>();
+            cover.slotsPerSide = 3;
+            cover.showSlotMarkers = false;
+        }
+        else
+        {
+            obstacle.center = new Vector3(0f, 0.25f, 0f);
+            obstacle.size = new Vector3(footprint, 0.5f, footprint);
+        }
 
         MapEditHandle marker = visual.AddComponent<MapEditHandle>();
         marker.kind = MapEditHandle.Kind.Decoration;
         marker.decorationId = piece.pieceId;
-        CreateSelectionRing(visual.transform, footprint * 0.55f);
+        CreateSelectionRing(visual.transform, barricade ? 0.72f : footprint * 0.55f);
         return visual.transform;
     }
 
@@ -509,41 +525,149 @@ public class PlayableMapBuilder
         marker.decorationId = pieceId;
     }
 
-    static GameObject CreateFarmProp(string catalogId)
+    static GameObject CreateBlockProp(string catalogId)
     {
         var root = new GameObject(catalogId);
         switch (catalogId)
         {
             case "crop-row":
-                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(0f, 0.06f, -0.28f), new Vector3(1.3f, 0.08f, 0.22f), new Color(0.28f, 0.45f, 0.18f));
-                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(0f, 0.06f, 0f), new Vector3(1.3f, 0.08f, 0.22f), new Color(0.36f, 0.32f, 0.16f));
-                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(0f, 0.06f, 0.28f), new Vector3(1.3f, 0.08f, 0.22f), new Color(0.28f, 0.45f, 0.18f));
+                AddBlock(root.transform, new Vector3(0f, 0.06f, -0.28f), new Vector3(1.3f, 0.08f, 0.22f), new Color(0.28f, 0.45f, 0.18f));
+                AddBlock(root.transform, new Vector3(0f, 0.06f, 0f), new Vector3(1.3f, 0.08f, 0.22f), new Color(0.36f, 0.32f, 0.16f));
+                AddBlock(root.transform, new Vector3(0f, 0.06f, 0.28f), new Vector3(1.3f, 0.08f, 0.22f), new Color(0.28f, 0.45f, 0.18f));
                 break;
             case "hay-bale":
-                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(0f, 0.22f, 0f), new Vector3(0.7f, 0.4f, 0.45f), new Color(0.72f, 0.58f, 0.22f));
+                AddBlock(root.transform, new Vector3(0f, 0.22f, 0f), new Vector3(0.7f, 0.4f, 0.45f), new Color(0.72f, 0.58f, 0.22f));
                 break;
             case "fence":
-                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(-0.45f, 0.28f, 0f), new Vector3(0.08f, 0.55f, 0.08f), new Color(0.42f, 0.28f, 0.16f));
-                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(0.45f, 0.28f, 0f), new Vector3(0.08f, 0.55f, 0.08f), new Color(0.42f, 0.28f, 0.16f));
-                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(0f, 0.38f, 0f), new Vector3(1.05f, 0.08f, 0.08f), new Color(0.5f, 0.34f, 0.18f));
+                AddBlock(root.transform, new Vector3(-0.45f, 0.28f, 0f), new Vector3(0.08f, 0.55f, 0.08f), new Color(0.42f, 0.28f, 0.16f));
+                AddBlock(root.transform, new Vector3(0.45f, 0.28f, 0f), new Vector3(0.08f, 0.55f, 0.08f), new Color(0.42f, 0.28f, 0.16f));
+                AddBlock(root.transform, new Vector3(0f, 0.38f, 0f), new Vector3(1.05f, 0.08f, 0.08f), new Color(0.5f, 0.34f, 0.18f));
                 break;
             case "barn":
-                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(0f, 0.45f, 0f), new Vector3(1.6f, 0.85f, 1.1f), new Color(0.55f, 0.18f, 0.14f));
-                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(0f, 1.0f, 0f), new Vector3(1.75f, 0.22f, 1.25f), new Color(0.32f, 0.18f, 0.12f));
+                AddBlock(root.transform, new Vector3(0f, 0.45f, 0f), new Vector3(1.6f, 0.85f, 1.1f), new Color(0.55f, 0.18f, 0.14f));
+                AddBlock(root.transform, new Vector3(0f, 1.0f, 0f), new Vector3(1.75f, 0.22f, 1.25f), new Color(0.32f, 0.18f, 0.12f));
                 break;
             case "silo":
-                AddFarmPart(root.transform, PrimitiveType.Cylinder, new Vector3(0f, 0.7f, 0f), new Vector3(0.55f, 0.7f, 0.55f), new Color(0.78f, 0.78f, 0.74f));
-                AddFarmPart(root.transform, PrimitiveType.Cylinder, new Vector3(0f, 1.45f, 0f), new Vector3(0.62f, 0.08f, 0.62f), new Color(0.45f, 0.28f, 0.18f));
+                AddBlock(root.transform, PrimitiveType.Cylinder, new Vector3(0f, 0.7f, 0f), new Vector3(0.55f, 0.7f, 0.55f), new Color(0.78f, 0.78f, 0.74f));
+                AddBlock(root.transform, PrimitiveType.Cylinder, new Vector3(0f, 1.45f, 0f), new Vector3(0.62f, 0.08f, 0.62f), new Color(0.45f, 0.28f, 0.18f));
+                break;
+            case "hard-standing":
+                AddBlock(root.transform, new Vector3(0f, 0.025f, 0f), new Vector3(0.72f, 0.04f, 1.15f), new Color(0.58f, 0.57f, 0.54f));
+                AddBlock(root.transform, new Vector3(0f, 0.05f, 0.5f), new Vector3(0.58f, 0.015f, 0.06f), new Color(0.86f, 0.7f, 0.16f));
+                AddBlock(root.transform, new Vector3(0f, 0.05f, -0.5f), new Vector3(0.58f, 0.015f, 0.06f), new Color(0.86f, 0.7f, 0.16f));
+                AddBlock(root.transform, new Vector3(-0.28f, 0.05f, 0f), new Vector3(0.05f, 0.015f, 1.0f), new Color(0.86f, 0.7f, 0.16f));
+                AddBlock(root.transform, new Vector3(0.28f, 0.05f, 0f), new Vector3(0.05f, 0.015f, 1.0f), new Color(0.86f, 0.7f, 0.16f));
+                break;
+            case "container":
+                AddContainer(root.transform, new Color(0.15f, 0.38f, 0.62f));
+                break;
+            case "container-b":
+                AddContainer(root.transform, new Color(0.58f, 0.24f, 0.14f));
+                break;
+            case "pallet":
+                AddBlock(root.transform, new Vector3(0f, 0.04f, 0f), new Vector3(0.62f, 0.06f, 0.48f), new Color(0.42f, 0.3f, 0.16f));
+                AddBlock(root.transform, new Vector3(0f, 0.16f, 0f), new Vector3(0.48f, 0.18f, 0.36f), new Color(0.62f, 0.54f, 0.4f));
+                AddBlock(root.transform, new Vector3(0.05f, 0.28f, 0.02f), new Vector3(0.28f, 0.1f, 0.24f), new Color(0.48f, 0.5f, 0.46f));
+                break;
+            case "warehouse":
+                AddBlock(root.transform, new Vector3(0f, 0.36f, 0f), new Vector3(1.85f, 0.68f, 1.05f), new Color(0.55f, 0.56f, 0.58f));
+                AddBlock(root.transform, new Vector3(0f, 0.74f, 0f), new Vector3(1.98f, 0.08f, 1.16f), new Color(0.24f, 0.27f, 0.3f));
+                AddBlock(root.transform, new Vector3(-0.45f, 0.8f, 0f), new Vector3(0.08f, 0.05f, 1.05f), new Color(0.45f, 0.48f, 0.5f));
+                AddBlock(root.transform, new Vector3(0.15f, 0.8f, 0f), new Vector3(0.08f, 0.05f, 1.05f), new Color(0.45f, 0.48f, 0.5f));
+                AddBlock(root.transform, new Vector3(0.7f, 0.8f, 0f), new Vector3(0.08f, 0.05f, 1.05f), new Color(0.45f, 0.48f, 0.5f));
+                AddBlock(root.transform, new Vector3(0f, 0.3f, 0.54f), new Vector3(0.85f, 0.5f, 0.04f), new Color(0.16f, 0.17f, 0.18f));
+                AddBlock(root.transform, new Vector3(0f, 0.18f, 0.57f), new Vector3(0.7f, 0.035f, 0.02f), new Color(0.86f, 0.7f, 0.16f));
+                AddBlock(root.transform, new Vector3(-1.05f, 0.26f, -0.1f), new Vector3(0.38f, 0.46f, 0.48f), new Color(0.7f, 0.72f, 0.74f));
+                AddBlock(root.transform, new Vector3(-1.05f, 0.32f, 0.15f), new Vector3(0.2f, 0.14f, 0.03f), new Color(0.4f, 0.58f, 0.7f));
+                AddBlock(root.transform, new Vector3(0.55f, 0.92f, -0.2f), new Vector3(0.18f, 0.22f, 0.18f), new Color(0.3f, 0.32f, 0.34f));
+                break;
+            case "apron":
+                AddBlock(root.transform, new Vector3(0f, 0.03f, 0f), new Vector3(1.55f, 0.04f, 1.55f), new Color(0.72f, 0.73f, 0.70f));
+                AddBlock(root.transform, new Vector3(0f, 0.06f, 0f), new Vector3(0.9f, 0.02f, 0.12f), new Color(0.93f, 0.93f, 0.90f));
+                break;
+            case "runway":
+                AddBlock(root.transform, new Vector3(0f, 0.03f, 0f), new Vector3(2.2f, 0.04f, 0.7f), new Color(0.22f, 0.23f, 0.25f));
+                AddBlock(root.transform, new Vector3(-0.55f, 0.06f, 0f), new Vector3(0.32f, 0.02f, 0.08f), new Color(0.93f, 0.93f, 0.90f));
+                AddBlock(root.transform, new Vector3(0f, 0.06f, 0f), new Vector3(0.32f, 0.02f, 0.08f), new Color(0.93f, 0.93f, 0.90f));
+                AddBlock(root.transform, new Vector3(0.55f, 0.06f, 0f), new Vector3(0.32f, 0.02f, 0.08f), new Color(0.93f, 0.93f, 0.90f));
+                break;
+            case "plane":
+                AddBlock(root.transform, new Vector3(0.05f, 0.28f, 0f), new Vector3(1.2f, 0.22f, 0.26f), new Color(0.90f, 0.91f, 0.88f));
+                AddBlock(root.transform, new Vector3(0.72f, 0.28f, 0f), new Vector3(0.22f, 0.16f, 0.2f), new Color(0.82f, 0.84f, 0.86f));
+                AddBlock(root.transform, new Vector3(0f, 0.24f, 0f), new Vector3(0.36f, 0.05f, 1.35f), new Color(0.35f, 0.38f, 0.42f));
+                AddBlock(root.transform, new Vector3(-0.55f, 0.42f, 0f), new Vector3(0.16f, 0.04f, 0.5f), new Color(0.35f, 0.38f, 0.42f));
+                AddBlock(root.transform, new Vector3(-0.58f, 0.5f, 0f), new Vector3(0.18f, 0.28f, 0.06f), new Color(0.20f, 0.35f, 0.62f));
+                AddBlock(root.transform, new Vector3(0.08f, 0.16f, 0.32f), new Vector3(0.28f, 0.1f, 0.12f), new Color(0.18f, 0.19f, 0.2f));
+                AddBlock(root.transform, new Vector3(0.08f, 0.16f, -0.32f), new Vector3(0.28f, 0.1f, 0.12f), new Color(0.18f, 0.19f, 0.2f));
+                break;
+            case "crate":
+                AddBlock(root.transform, new Vector3(0f, 0.22f, 0f), new Vector3(0.55f, 0.42f, 0.48f), new Color(0.55f, 0.42f, 0.22f));
+                AddBlock(root.transform, new Vector3(0f, 0.22f, 0f), new Vector3(0.58f, 0.08f, 0.08f), new Color(0.32f, 0.24f, 0.14f));
+                break;
+            case "barrier":
+                AddBlock(root.transform, new Vector3(0f, 0.16f, 0f), new Vector3(1.15f, 0.28f, 0.28f), new Color(0.72f, 0.73f, 0.70f));
+                AddBlock(root.transform, new Vector3(0f, 0.22f, 0.15f), new Vector3(0.7f, 0.08f, 0.04f), new Color(0.85f, 0.72f, 0.18f));
+                break;
+            case "light-mast":
+                AddBlock(root.transform, new Vector3(0f, 0.55f, 0f), new Vector3(0.08f, 1.1f, 0.08f), new Color(0.45f, 0.47f, 0.5f));
+                AddBlock(root.transform, new Vector3(0.16f, 1.08f, 0f), new Vector3(0.32f, 0.06f, 0.06f), new Color(0.45f, 0.47f, 0.5f));
+                AddBlock(root.transform, new Vector3(0.32f, 1.02f, 0f), new Vector3(0.16f, 0.1f, 0.14f), new Color(0.95f, 0.95f, 0.7f));
+                break;
+            case "fuel-tank":
+                AddBlock(root.transform, new Vector3(0f, 0.08f, 0f), new Vector3(1.15f, 0.1f, 0.55f), new Color(0.55f, 0.56f, 0.54f));
+                AddBlock(root.transform, new Vector3(0f, 0.32f, 0f), new Vector3(1.05f, 0.38f, 0.42f), new Color(0.75f, 0.22f, 0.16f));
+                AddBlock(root.transform, new Vector3(0f, 0.54f, 0f), new Vector3(0.7f, 0.06f, 0.28f), new Color(0.45f, 0.12f, 0.1f));
+                break;
+            case "hangar":
+                AddBlock(root.transform, new Vector3(0f, 0.38f, 0f), new Vector3(1.8f, 0.72f, 1.15f), new Color(0.62f, 0.68f, 0.74f));
+                AddBlock(root.transform, new Vector3(0f, 0.78f, 0f), new Vector3(1.95f, 0.1f, 1.28f), new Color(0.38f, 0.42f, 0.46f));
+                AddBlock(root.transform, new Vector3(0f, 0.32f, 0.58f), new Vector3(0.9f, 0.55f, 0.06f), new Color(0.28f, 0.32f, 0.36f));
+                AddBlock(root.transform, new Vector3(0f, 0.84f, 0f), new Vector3(1.3f, 0.04f, 0.08f), new Color(0.93f, 0.93f, 0.90f));
+                break;
+            case "tower":
+                AddBlock(root.transform, new Vector3(0f, 0.18f, 0f), new Vector3(0.7f, 0.36f, 0.7f), new Color(0.7f, 0.71f, 0.68f));
+                AddBlock(root.transform, new Vector3(0f, 0.7f, 0f), new Vector3(0.38f, 0.7f, 0.38f), new Color(0.78f, 0.8f, 0.82f));
+                AddBlock(root.transform, new Vector3(0f, 1.15f, 0f), new Vector3(0.62f, 0.32f, 0.62f), new Color(0.45f, 0.62f, 0.78f));
+                AddBlock(root.transform, new Vector3(0f, 1.36f, 0f), new Vector3(0.78f, 0.08f, 0.78f), new Color(0.28f, 0.32f, 0.36f));
+                AddBlock(root.transform, new Vector3(0f, 1.55f, 0f), new Vector3(0.06f, 0.28f, 0.06f), new Color(0.2f, 0.22f, 0.24f));
+                break;
+            case "barricade":
+                AddBlock(root.transform, new Vector3(0f, 0.0625f, 0f), new Vector3(1f, 0.125f, 0.25f), new Color(0.55f, 0.5f, 0.42f));
+                AddBlock(root.transform, new Vector3(0f, 0.09f, 0.09f), new Vector3(0.92f, 0.02f, 0.02f), new Color(0.72f, 0.58f, 0.22f));
+                break;
+            case "terminal":
+                AddBlock(root.transform, new Vector3(0f, 0.28f, 0f), new Vector3(2.1f, 0.52f, 0.85f), new Color(0.82f, 0.84f, 0.86f));
+                AddBlock(root.transform, new Vector3(0f, 0.42f, 0.44f), new Vector3(1.85f, 0.16f, 0.06f), new Color(0.45f, 0.62f, 0.78f));
+                AddBlock(root.transform, new Vector3(0.7f, 0.18f, 0.44f), new Vector3(0.22f, 0.28f, 0.06f), new Color(0.28f, 0.32f, 0.36f));
+                AddBlock(root.transform, new Vector3(0f, 0.58f, 0f), new Vector3(2.2f, 0.08f, 0.95f), new Color(0.38f, 0.42f, 0.46f));
                 break;
             default:
-                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(0f, 0.22f, 0f), new Vector3(0.8f, 0.45f, 0.8f), new Color(0.4f, 0.42f, 0.28f));
+                AddBlock(root.transform, new Vector3(0f, 0.22f, 0f), new Vector3(0.8f, 0.45f, 0.8f), new Color(0.4f, 0.42f, 0.28f));
                 break;
         }
 
         return root;
     }
 
-    static void AddFarmPart(Transform parent, PrimitiveType type, Vector3 localPosition, Vector3 localScale, Color color)
+    static void AddContainer(Transform parent, Color body)
+    {
+        Color rib = Color.Lerp(body, Color.black, 0.4f);
+        Color edge = Color.Lerp(body, Color.white, 0.15f);
+        AddBlock(parent, new Vector3(0f, 0.24f, 0f), new Vector3(1.2f, 0.42f, 0.46f), body);
+        AddBlock(parent, new Vector3(-0.35f, 0.46f, 0f), new Vector3(0.08f, 0.03f, 0.4f), rib);
+        AddBlock(parent, new Vector3(0f, 0.46f, 0f), new Vector3(0.08f, 0.03f, 0.4f), rib);
+        AddBlock(parent, new Vector3(0.35f, 0.46f, 0f), new Vector3(0.08f, 0.03f, 0.4f), rib);
+        AddBlock(parent, new Vector3(0.62f, 0.24f, 0f), new Vector3(0.04f, 0.38f, 0.42f), edge);
+        AddBlock(parent, new Vector3(-0.62f, 0.24f, 0f), new Vector3(0.04f, 0.38f, 0.42f), edge);
+        AddBlock(parent, new Vector3(0.65f, 0.24f, 0f), new Vector3(0.02f, 0.04f, 0.32f), new Color(0.86f, 0.7f, 0.16f));
+    }
+
+    static void AddBlock(Transform parent, Vector3 localPosition, Vector3 localScale, Color color)
+    {
+        AddBlock(parent, PrimitiveType.Cube, localPosition, localScale, color);
+    }
+
+    static void AddBlock(Transform parent, PrimitiveType type, Vector3 localPosition, Vector3 localScale, Color color)
     {
         GameObject part = GameObject.CreatePrimitive(type);
         part.transform.SetParent(parent, false);
@@ -562,7 +686,7 @@ public class PlayableMapBuilder
     static GameObject CreateDecorationModel(string catalogId)
     {
         DecorationCatalog.Entry entry = DecorationCatalog.Find(catalogId);
-        if (string.IsNullOrEmpty(entry.modelFileName)) return CreateFarmProp(catalogId);
+        if (string.IsNullOrEmpty(entry.modelFileName)) return CreateBlockProp(catalogId);
         string modelName = entry.modelFileName;
 
 #if UNITY_EDITOR
@@ -608,6 +732,18 @@ public class PlayableMapBuilder
         surface.useGeometry = NavMeshCollectGeometry.PhysicsColliders;
         surface.center = new Vector3(bounds.center.x, 2f, bounds.center.z);
         surface.size = new Vector3(bounds.size.x + 4f, 10f, bounds.size.z + 4f);
+        surface.BuildNavMesh();
+    }
+
+    public static void BakeOriginalNavigation()
+    {
+        GameObject groundObject = GameObject.Find("Ground");
+        if (groundObject == null) return;
+
+        NavMeshSurface surface = groundObject.GetComponent<NavMeshSurface>();
+        if (surface == null) surface = groundObject.AddComponent<NavMeshSurface>();
+        // The scene still points at a navigation mesh asset that is no longer in the project.
+        // Units spawn, then cannot walk, so the match looks frozen. Rebuild it before they appear.
         surface.BuildNavMesh();
     }
 

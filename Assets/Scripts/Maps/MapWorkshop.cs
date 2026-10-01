@@ -21,6 +21,9 @@ public class MapWorkshop : MonoBehaviour
     GameObject canvasObject;
     GameObject backdrop;
     GameObject sidePanel;
+    GameObject homeButton;
+    GameObject turnBar;
+    Transform formRoot;
     GameObject postMatchPanel;
     InputField nameInput;
     Text statusText;
@@ -34,6 +37,7 @@ public class MapWorkshop : MonoBehaviour
     Vector3 roadStart;
     string selectedDecorationId;
     string selectedRoadId;
+    bool atOpeningMenu = true;
 
     string draftName = "Blank Map";
     int draftSectorCount = 3;
@@ -74,7 +78,11 @@ public class MapWorkshop : MonoBehaviour
             return;
         }
 
-        if (screen == Screen.Edit) HandleDrag();
+        if (screen == Screen.Edit)
+        {
+            HandleDrag();
+            RefreshTurnBar();
+        }
 
         if (screen == Screen.Edit && Keyboard.current != null &&
             (Keyboard.current.deleteKey.wasPressedThisFrame || Keyboard.current.backspaceKey.wasPressedThisFrame))
@@ -132,6 +140,7 @@ public class MapWorkshop : MonoBehaviour
 
         if (MapSession.phase == MapSession.Phase.Play || MapSession.phase == MapSession.Phase.QuickTest)
         {
+            atOpeningMenu = false;
             screen = Screen.Playing;
             HideSidePanel();
             if (IsOriginalSelected())
@@ -164,6 +173,11 @@ public class MapWorkshop : MonoBehaviour
     void BeginMatchIfNeeded()
     {
         if (screen != Screen.Playing || GameManager.Instance == null) return;
+
+        if (IsOriginalSelected())
+        {
+            PlayableMapBuilder.BakeOriginalNavigation();
+        }
 
         PlayableMapBuilder.EnsureGameplayLinks(GameManager.Instance);
         GameManager.Instance.PrepareForRematch();
@@ -256,6 +270,7 @@ public class MapWorkshop : MonoBehaviour
                 selectedDecorationId = dragHandle.decorationId;
                 selectedRoadId = null;
                 if (builder != null) builder.HighlightDecoration(selectedDecorationId);
+                if (statusText != null) statusText.text = "Piece selected. Turn left or Turn right spins it 45 degrees. Delete removes it.";
             }
             else if (dragHandle != null && dragHandle.kind == MapEditHandle.Kind.DecorationRemove)
             {
@@ -390,6 +405,7 @@ public class MapWorkshop : MonoBehaviour
 
     void ShowModeSelect()
     {
+        atOpeningMenu = true;
         screen = Screen.Menu;
         MapSession.phase = MapSession.Phase.Menu;
         MapSession.allowLookAround = false;
@@ -404,7 +420,7 @@ public class MapWorkshop : MonoBehaviour
         AddButton(sidePanel.transform, "Test", ShowTestSetup);
         AddButton(sidePanel.transform, "Edit", ShowEditPick);
         AddSpacer();
-        AddBody("These open their own scenes. Main menu on that screen brings you back.");
+        AddBody("Main menu sits at the bottom-left of every screen after this one. ChatGPT Map and Unit Sandbox have it too.");
         AddButton(sidePanel.transform, "ChatGPT Map", () => OpenOutsideScene("GreyboxBattlefield01"));
         AddButton(sidePanel.transform, "Unit Sandbox", () => OpenOutsideScene("UnitSandbox"));
         statusText = AddBody("");
@@ -412,6 +428,7 @@ public class MapWorkshop : MonoBehaviour
 
     void ShowPlayFaction()
     {
+        atOpeningMenu = false;
         screen = Screen.Menu;
         ClearSidePanel();
         AddTitle("Play");
@@ -431,6 +448,7 @@ public class MapWorkshop : MonoBehaviour
 
     void ShowPlayMaps()
     {
+        atOpeningMenu = false;
         screen = Screen.Menu;
         ClearSidePanel();
         string side = MapSession.chosenFaction == Faction.Defender ? "Defender" : "Attacker";
@@ -443,6 +461,7 @@ public class MapWorkshop : MonoBehaviour
 
     void ShowTestSetup()
     {
+        atOpeningMenu = false;
         screen = Screen.Menu;
         ClearSidePanel();
         AddTitle("Test");
@@ -462,6 +481,7 @@ public class MapWorkshop : MonoBehaviour
 
     void ShowEditPick()
     {
+        atOpeningMenu = false;
         screen = Screen.Menu;
         ClearSidePanel();
         AddTitle("Edit");
@@ -516,15 +536,17 @@ public class MapWorkshop : MonoBehaviour
 
     void ShowEdit()
     {
+        atOpeningMenu = false;
         screen = Screen.Edit;
         MapSession.phase = MapSession.Phase.Edit;
         MapSession.allowLookAround = true;
         SyncDraftFromMap();
         SetMatchChrome(showReadout: false, showCommands: false);
         ClearSidePanel();
+        formRoot = BeginFormScroll();
         PlayableMapDefinition map = MapSession.workingCopy;
         AddTitle(map != null ? map.mapName : "Edit map");
-        AddBody("Each row is one sector. Choose its points and whether it looks like a market or a farm. Click a piece to move it. Press Delete to remove the selected piece or an added road.");
+        AddBody("Each row is one sector. Choose its points and whether it looks like a market, a farm, an industrial yard, or an airport. The gold bar scrolls this list. Click a piece to move it, then Turn left or Turn right to spin it 45 degrees. Barricade, under Cover, is a real cover wall in a match. Press Delete to remove the selected piece or an added road.");
         AddStepper("Sectors", draftSectorCount, 1, 6, SetEditSectorCount);
         for (int i = 0; i < draftSectorCount && i < draftPoints.Count; i++)
         {
@@ -550,11 +572,18 @@ public class MapWorkshop : MonoBehaviour
         AddButton(row.transform, "Quick Test", QuickTestWorkingCopy);
         AddButton(row.transform, "Main menu", ReturnToMenu);
         statusText = AddBody(MapSession.workingCopyDirty ? "Unsaved changes." : "Saved maps stay in the menu.");
+        if (formRoot is RectTransform formRect)
+        {
+            LayoutRebuilder.ForceRebuildLayoutImmediate(formRect);
+            ScrollRect editorScroll = formRect.GetComponentInParent<ScrollRect>();
+            if (editorScroll != null) editorScroll.verticalNormalizedPosition = 1f;
+        }
     }
 
     void ShowNameAndSave()
     {
         if (MapSession.workingCopy == null) return;
+        atOpeningMenu = false;
         screen = Screen.SaveName;
         string current = string.IsNullOrWhiteSpace(MapSession.workingCopy.mapName) ? "Blank Map" : MapSession.workingCopy.mapName;
         ClearSidePanel();
@@ -664,6 +693,7 @@ public class MapWorkshop : MonoBehaviour
             MapSession.testRunsFinished = 0;
         }
 
+        atOpeningMenu = false;
         screen = Screen.Playing;
         if (postMatchPanel != null)
         {
@@ -870,6 +900,27 @@ public class MapWorkshop : MonoBehaviour
         if (statusText != null) statusText.text = "Spawns and control points recentred. Sector sizes stayed as they were.";
     }
 
+    static string LookName(MapDistrictKind kind)
+    {
+        if (kind == MapDistrictKind.Farm) return "farm";
+        if (kind == MapDistrictKind.Industrial) return "industrial yard";
+        if (kind == MapDistrictKind.Airport) return "airport";
+        return "market";
+    }
+
+    static int LookIndex(MapDistrictKind kind)
+    {
+        return (int)kind;
+    }
+
+    static MapDistrictKind LookFromIndex(int index)
+    {
+        if (index == (int)MapDistrictKind.Farm) return MapDistrictKind.Farm;
+        if (index == (int)MapDistrictKind.Industrial) return MapDistrictKind.Industrial;
+        if (index == (int)MapDistrictKind.Airport) return MapDistrictKind.Airport;
+        return MapDistrictKind.Market;
+    }
+
     void SetSectorLook(int index, MapDistrictKind kind)
     {
         PlayableMapDefinition map = MapSession.workingCopy;
@@ -882,8 +933,8 @@ public class MapWorkshop : MonoBehaviour
         ShowEdit();
         if (statusText != null)
         {
-            string look = kind == MapDistrictKind.Farm ? "farm" : "market";
-            statusText.text = "Sector " + (char)('A' + index) + " is now a " + look + ". Pieces you kept stay.";
+            string article = kind == MapDistrictKind.Industrial || kind == MapDistrictKind.Airport ? "an " : "a ";
+            statusText.text = "Sector " + (char)('A' + index) + " is now " + article + LookName(kind) + ". Pieces you kept stay.";
         }
     }
 
@@ -987,6 +1038,7 @@ public class MapWorkshop : MonoBehaviour
         if (UIManager.Instance != null) UIManager.Instance.SetMatchReadoutVisible(showReadout);
         ControlModeHUD commandHud = FindAnyObjectByType<ControlModeHUD>(FindObjectsInactive.Include);
         if (commandHud != null) commandHud.SetVisible(showCommands);
+        ZoomSliderHUD.SetVisible(screen == Screen.Edit || screen == Screen.Playing);
         if (showCommands) StoreManager.ShowForCurrentMatch();
         else StoreManager.Hide();
         if (ControlModeManager.Instance == null) return;
@@ -1099,6 +1151,8 @@ public class MapWorkshop : MonoBehaviour
         layout.childForceExpandWidth = true;
         layout.childForceExpandHeight = false;
         sidePanel.AddComponent<ContentSizeFitter>();
+        CreateHomeButton();
+        CreateTurnBar();
         ApplyMenuLayout();
     }
 
@@ -1112,6 +1166,9 @@ public class MapWorkshop : MonoBehaviour
     {
         if (sidePanel == null) return;
         sidePanel.SetActive(true);
+        formRoot = null;
+        VerticalLayoutGroup panelLayout = sidePanel.GetComponent<VerticalLayoutGroup>();
+        if (panelLayout != null) panelLayout.enabled = true;
         for (int i = sidePanel.transform.childCount - 1; i >= 0; i--)
         {
             Destroy(sidePanel.transform.GetChild(i).gameObject);
@@ -1123,9 +1180,89 @@ public class MapWorkshop : MonoBehaviour
         ApplyMenuLayout();
     }
 
+    void CreateHomeButton()
+    {
+        homeButton = new GameObject("Main menu");
+        homeButton.transform.SetParent(canvasObject.transform, false);
+        Image image = homeButton.AddComponent<Image>();
+        image.color = new Color(0.12f, 0.14f, 0.18f, 0.94f);
+        Button button = homeButton.AddComponent<Button>();
+        button.targetGraphic = image;
+        button.onClick.AddListener(ReturnToMenu);
+
+        RectTransform rect = homeButton.GetComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0f, 0f);
+        rect.anchorMax = new Vector2(0f, 0f);
+        rect.pivot = new Vector2(0f, 0f);
+        rect.sizeDelta = new Vector2(180f, 48f);
+        rect.anchoredPosition = new Vector2(16f, 16f);
+
+        GameObject labelObject = new GameObject("Label");
+        labelObject.transform.SetParent(homeButton.transform, false);
+        Text label = labelObject.AddComponent<Text>();
+        label.font = BuiltinFont();
+        label.text = "Main menu";
+        label.fontSize = 18;
+        label.fontStyle = FontStyle.Bold;
+        label.alignment = TextAnchor.MiddleCenter;
+        label.color = Color.white;
+        Stretch(labelObject, 6f);
+        homeButton.SetActive(false);
+    }
+
+    void CreateTurnBar()
+    {
+        turnBar = new GameObject("Turn Bar");
+        turnBar.transform.SetParent(canvasObject.transform, false);
+        Image image = turnBar.AddComponent<Image>();
+        image.color = new Color(0.08f, 0.1f, 0.12f, 0.94f);
+        RectTransform rect = turnBar.GetComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0.5f, 1f);
+        rect.anchorMax = new Vector2(0.5f, 1f);
+        rect.pivot = new Vector2(0.5f, 1f);
+        rect.sizeDelta = new Vector2(440f, 56f);
+        rect.anchoredPosition = new Vector2(0f, -16f);
+
+        HorizontalLayoutGroup row = turnBar.AddComponent<HorizontalLayoutGroup>();
+        row.padding = new RectOffset(8, 8, 8, 8);
+        row.spacing = 8f;
+        row.childAlignment = TextAnchor.MiddleCenter;
+        row.childControlWidth = true;
+        row.childControlHeight = true;
+        row.childForceExpandWidth = true;
+        row.childForceExpandHeight = true;
+        AddButton(turnBar.transform, "Turn left", () => RotateSelected(-45f));
+        AddButton(turnBar.transform, "Turn right", () => RotateSelected(45f));
+        turnBar.SetActive(false);
+    }
+
+    void RefreshTurnBar()
+    {
+        if (turnBar == null) return;
+        bool show = screen == Screen.Edit && !string.IsNullOrEmpty(selectedDecorationId);
+        if (turnBar.activeSelf != show) turnBar.SetActive(show);
+    }
+
+    void RotateSelected(float deltaDegrees)
+    {
+        if (MapSession.workingCopy == null || string.IsNullOrEmpty(selectedDecorationId)) return;
+        MapSession.workingCopy.RotateDecoration(selectedDecorationId, deltaDegrees);
+        MapSession.workingCopyDirty = true;
+        if (builder != null)
+        {
+            builder.Sync();
+            builder.HighlightDecoration(selectedDecorationId);
+        }
+
+        string way = deltaDegrees < 0f ? "left" : "right";
+        if (statusText != null) statusText.text = "Turned 45 degrees " + way + ". Save to keep that angle.";
+    }
+
     void ApplyMenuLayout()
     {
         bool menu = screen == Screen.Menu;
+        if (homeButton != null) homeButton.SetActive(!atOpeningMenu);
+        RefreshTurnBar();
         if (backdrop != null) backdrop.SetActive(menu);
         if (sidePanel == null) return;
 
@@ -1152,8 +1289,8 @@ public class MapWorkshop : MonoBehaviour
             rect.anchorMin = new Vector2(0f, 0f);
             rect.anchorMax = new Vector2(0f, 1f);
             rect.pivot = new Vector2(0f, 0.5f);
-            rect.sizeDelta = new Vector2(420f, -24f);
-            rect.anchoredPosition = new Vector2(12f, 0f);
+            rect.sizeDelta = new Vector2(420f, -88f);
+            rect.anchoredPosition = new Vector2(12f, 32f);
             if (fitter != null)
             {
                 fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
@@ -1184,7 +1321,7 @@ public class MapWorkshop : MonoBehaviour
     Text AddText(string value, int size, FontStyle style, TextAnchor anchor)
     {
         GameObject textObject = new GameObject("Text");
-        textObject.transform.SetParent(sidePanel.transform, false);
+        textObject.transform.SetParent(FormParent(), false);
         Text text = textObject.AddComponent<Text>();
         text.font = BuiltinFont();
         text.text = value;
@@ -1240,8 +1377,8 @@ public class MapWorkshop : MonoBehaviour
 
         AddDropdown(row.transform, new[] { "1 point", "2 points", "3 points", "4 points" }, Mathf.Clamp(points, 1, 4) - 1,
             value => SetEditPointCount(index, value + 1));
-        AddDropdown(row.transform, new[] { "Market", "Farm" }, look == MapDistrictKind.Farm ? 1 : 0,
-            value => SetSectorLook(index, value == 1 ? MapDistrictKind.Farm : MapDistrictKind.Market));
+        AddDropdown(row.transform, new[] { "Market", "Farm", "Industrial", "Airport" }, LookIndex(look),
+            value => SetSectorLook(index, LookFromIndex(value)));
     }
 
     void AddDropdown(Transform parent, string[] options, int value, UnityEngine.Events.UnityAction<int> changed)
@@ -1331,56 +1468,115 @@ public class MapWorkshop : MonoBehaviour
         template.SetActive(false);
     }
 
-    void AddPalette()
+    Transform FormParent()
     {
-        paletteChoices.Clear();
-        Text heading = AddTextOn(sidePanel.transform, "Pieces", 18);
-        heading.alignment = TextAnchor.MiddleLeft;
+        return formRoot != null ? formRoot : sidePanel.transform;
+    }
 
-        GameObject scrollObject = new GameObject("Palette");
+    Transform BeginFormScroll()
+    {
+        VerticalLayoutGroup panelLayout = sidePanel.GetComponent<VerticalLayoutGroup>();
+        if (panelLayout != null) panelLayout.enabled = false;
+
+        GameObject scrollObject = new GameObject("EditorScroll", typeof(RectTransform), typeof(Image), typeof(ScrollRect));
         scrollObject.transform.SetParent(sidePanel.transform, false);
-        LayoutElement scrollLayout = scrollObject.AddComponent<LayoutElement>();
-        scrollLayout.minHeight = 168f;
-        scrollLayout.preferredHeight = 168f;
-        scrollLayout.flexibleHeight = 0f;
-        Image background = scrollObject.AddComponent<Image>();
-        background.color = new Color(0.1f, 0.12f, 0.15f, 1f);
+        RectTransform scrollRectTransform = scrollObject.GetComponent<RectTransform>();
+        scrollRectTransform.anchorMin = Vector2.zero;
+        scrollRectTransform.anchorMax = Vector2.one;
+        scrollRectTransform.offsetMin = new Vector2(4f, 8f);
+        scrollRectTransform.offsetMax = new Vector2(-30f, -8f);
+        Image background = scrollObject.GetComponent<Image>();
+        background.color = new Color(1f, 1f, 1f, 0.02f);
+        background.raycastTarget = true;
 
-        ScrollRect scroll = scrollObject.AddComponent<ScrollRect>();
+        ScrollRect scroll = scrollObject.GetComponent<ScrollRect>();
         scroll.horizontal = false;
         scroll.vertical = true;
         scroll.movementType = ScrollRect.MovementType.Clamped;
-        scroll.scrollSensitivity = 28f;
+        scroll.scrollSensitivity = 60f;
+        scroll.inertia = true;
+        scroll.decelerationRate = 0.08f;
 
-        GameObject viewport = new GameObject("Viewport");
+        GameObject viewport = new GameObject("Viewport", typeof(RectTransform), typeof(Image), typeof(RectMask2D));
         viewport.transform.SetParent(scrollObject.transform, false);
-        RectTransform viewportRect = viewport.AddComponent<RectTransform>();
+        RectTransform viewportRect = viewport.GetComponent<RectTransform>();
         viewportRect.anchorMin = Vector2.zero;
         viewportRect.anchorMax = Vector2.one;
-        viewportRect.offsetMin = new Vector2(6f, 6f);
-        viewportRect.offsetMax = new Vector2(-6f, -6f);
-        viewport.AddComponent<RectMask2D>();
+        viewportRect.offsetMin = Vector2.zero;
+        viewportRect.offsetMax = Vector2.zero;
+        Image viewportImage = viewport.GetComponent<Image>();
+        viewportImage.color = new Color(1f, 1f, 1f, 0.02f);
+        viewportImage.raycastTarget = true;
         scroll.viewport = viewportRect;
 
-        GameObject content = new GameObject("Content");
+        GameObject content = new GameObject("Content", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
         content.transform.SetParent(viewport.transform, false);
-        RectTransform contentRect = content.AddComponent<RectTransform>();
+        RectTransform contentRect = content.GetComponent<RectTransform>();
         contentRect.anchorMin = new Vector2(0f, 1f);
         contentRect.anchorMax = new Vector2(1f, 1f);
         contentRect.pivot = new Vector2(0.5f, 1f);
         contentRect.anchoredPosition = Vector2.zero;
         contentRect.sizeDelta = new Vector2(0f, 0f);
-        VerticalLayoutGroup contentLayout = content.AddComponent<VerticalLayoutGroup>();
-        contentLayout.spacing = 4f;
+        VerticalLayoutGroup contentLayout = content.GetComponent<VerticalLayoutGroup>();
+        contentLayout.padding = new RectOffset(8, 8, 4, 12);
+        contentLayout.spacing = 8f;
         contentLayout.childAlignment = TextAnchor.UpperLeft;
         contentLayout.childControlWidth = true;
         contentLayout.childControlHeight = true;
         contentLayout.childForceExpandWidth = true;
         contentLayout.childForceExpandHeight = false;
-        ContentSizeFitter contentFitter = content.AddComponent<ContentSizeFitter>();
+        ContentSizeFitter contentFitter = content.GetComponent<ContentSizeFitter>();
         contentFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
         contentFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
         scroll.content = contentRect;
+        scroll.verticalScrollbar = CreateFormScrollbar(sidePanel.transform);
+        scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
+        return content.transform;
+    }
+
+    Scrollbar CreateFormScrollbar(Transform parent)
+    {
+        GameObject barObject = new GameObject("EditorScrollbar", typeof(RectTransform), typeof(Image), typeof(Scrollbar));
+        barObject.transform.SetParent(parent, false);
+        RectTransform barRect = barObject.GetComponent<RectTransform>();
+        barRect.anchorMin = new Vector2(1f, 0f);
+        barRect.anchorMax = new Vector2(1f, 1f);
+        barRect.pivot = new Vector2(1f, 0.5f);
+        barRect.sizeDelta = new Vector2(22f, -16f);
+        barRect.anchoredPosition = new Vector2(-6f, 0f);
+        barObject.GetComponent<Image>().color = new Color(0.16f, 0.18f, 0.22f, 1f);
+
+        GameObject sliding = new GameObject("Sliding Area", typeof(RectTransform));
+        sliding.transform.SetParent(barObject.transform, false);
+        RectTransform slidingRect = sliding.GetComponent<RectTransform>();
+        slidingRect.anchorMin = Vector2.zero;
+        slidingRect.anchorMax = Vector2.one;
+        slidingRect.offsetMin = new Vector2(3f, 3f);
+        slidingRect.offsetMax = new Vector2(-3f, -3f);
+
+        GameObject handle = new GameObject("Handle", typeof(RectTransform), typeof(Image));
+        handle.transform.SetParent(sliding.transform, false);
+        RectTransform handleRect = handle.GetComponent<RectTransform>();
+        handleRect.anchorMin = Vector2.zero;
+        handleRect.anchorMax = Vector2.one;
+        handleRect.offsetMin = Vector2.zero;
+        handleRect.offsetMax = Vector2.zero;
+        Image handleImage = handle.GetComponent<Image>();
+        handleImage.color = new Color(0.93f, 0.82f, 0.38f, 1f);
+
+        Scrollbar scrollbar = barObject.GetComponent<Scrollbar>();
+        scrollbar.handleRect = handleRect;
+        scrollbar.targetGraphic = handleImage;
+        scrollbar.direction = Scrollbar.Direction.BottomToTop;
+        scrollbar.navigation = new Navigation { mode = Navigation.Mode.None };
+        return scrollbar;
+    }
+
+    void AddPalette()
+    {
+        paletteChoices.Clear();
+        Text heading = AddTextOn(FormParent(), "Pieces", 18);
+        heading.alignment = TextAnchor.MiddleLeft;
 
         string lastGroup = null;
         for (int i = 0; i < DecorationCatalog.Entries.Length; i++)
@@ -1389,13 +1585,13 @@ public class MapWorkshop : MonoBehaviour
             if (entry.groupName != lastGroup)
             {
                 lastGroup = entry.groupName;
-                Text header = AddTextOn(content.transform, entry.groupName, 15);
+                Text header = AddTextOn(FormParent(), entry.groupName, 15);
                 header.alignment = TextAnchor.MiddleLeft;
                 LayoutElement headerLayout = header.GetComponent<LayoutElement>();
                 if (headerLayout != null) headerLayout.minHeight = 22f;
             }
 
-            AddPaletteButton(content.transform, entry);
+            AddPaletteButton(FormParent(), entry);
         }
     }
 
@@ -1519,7 +1715,7 @@ public class MapWorkshop : MonoBehaviour
     GameObject AddRow()
     {
         GameObject row = new GameObject("Row");
-        row.transform.SetParent(sidePanel.transform, false);
+        row.transform.SetParent(FormParent(), false);
         HorizontalLayoutGroup layout = row.AddComponent<HorizontalLayoutGroup>();
         layout.spacing = 8f;
         layout.childAlignment = TextAnchor.MiddleLeft;
@@ -1536,7 +1732,7 @@ public class MapWorkshop : MonoBehaviour
     void AddSpacer()
     {
         GameObject spacer = new GameObject("Spacer");
-        spacer.transform.SetParent(sidePanel.transform, false);
+        spacer.transform.SetParent(FormParent(), false);
         LayoutElement element = spacer.AddComponent<LayoutElement>();
         element.minHeight = 8f;
         element.preferredHeight = 8f;
@@ -1545,7 +1741,7 @@ public class MapWorkshop : MonoBehaviour
     InputField AddInput(string value)
     {
         GameObject inputObject = new GameObject("Name Input");
-        inputObject.transform.SetParent(sidePanel.transform, false);
+        inputObject.transform.SetParent(FormParent(), false);
         Image image = inputObject.AddComponent<Image>();
         image.color = new Color(0.12f, 0.14f, 0.18f, 1f);
         LayoutElement element = inputObject.AddComponent<LayoutElement>();

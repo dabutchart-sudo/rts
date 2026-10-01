@@ -116,7 +116,7 @@ public class Combat : MonoBehaviour
         }
     }
 
-    bool HasLineOfSight(GameObject target)
+    public bool HasLineOfSight(GameObject target)
     {
         Vector3 rayStart = transform.position + Vector3.up * 0.5f;
         Vector3 targetPos = target.transform.position + Vector3.up * 0.5f;
@@ -129,6 +129,7 @@ public class Combat : MonoBehaviour
         {
             if (hit.collider.gameObject == gameObject || hit.collider.gameObject == target) continue;
             if (hit.collider.GetComponent<Projectile>() != null) continue;
+            if (CoverPiece.ShotPassesOver(hit.collider, rayStart.y)) continue;
             if (hit.collider.CompareTag("Cover") || hit.collider.gameObject.isStatic) return false;
         }
         
@@ -149,9 +150,17 @@ public class Combat : MonoBehaviour
         Quaternion shootRotation;
         Vector3 normalizedAim = aimDir.normalized;
         
+        float damageScale = 1f;
+        float spreadScale = 1f;
+        if (CoverUse.TryGetIncomingModifiers(currentTarget.transform, transform.position, out float damageMultiplier, out float spreadMultiplier))
+        {
+            damageScale = damageMultiplier;
+            spreadScale = spreadMultiplier;
+        }
+
         if (normalizedAim != Vector3.up && normalizedAim != Vector3.down)
         {
-            Vector3 spread = Random.insideUnitSphere * (accuracySpread * 0.05f);
+            Vector3 spread = Random.insideUnitSphere * (accuracySpread * 0.05f * spreadScale);
             shootRotation = Quaternion.LookRotation(normalizedAim + spread);
         }
         else
@@ -172,7 +181,7 @@ public class Combat : MonoBehaviour
         Projectile projScript = proj.GetComponent<Projectile>();
         if (projScript != null)
         {
-            projScript.Initialize(currentTarget.transform, enemyTag, damagePerShot);
+            projScript.Initialize(currentTarget.transform, enemyTag, damagePerShot * damageScale);
         }
     }
 }

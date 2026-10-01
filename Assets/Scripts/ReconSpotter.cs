@@ -102,6 +102,7 @@ public sealed class ReconSpotter : MonoBehaviour
             if (hit.collider == null) continue;
             if (hit.collider.gameObject == gameObject || hit.collider.gameObject == target) continue;
             if (hit.collider.GetComponent<Projectile>() != null) continue;
+            if (CoverPiece.ShotPassesOver(hit.collider, rayStart.y)) continue;
             if (hit.collider.CompareTag("Cover") || hit.collider.gameObject.isStatic) return false;
         }
 

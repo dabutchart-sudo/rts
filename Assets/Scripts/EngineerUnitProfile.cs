@@ -82,6 +82,7 @@ public sealed class EngineerUnitProfile : MonoBehaviour
             if (hitObject == target || hitObject.transform.IsChildOf(target.transform)) continue;
             if (hitObject.CompareTag("Projectile")) continue;
 
+            if (CoverPiece.ShotPassesOver(hit.collider, origin.y)) continue;
             if (hitObject.CompareTag("Cover") || hitObject.isStatic) return false;
         }
 

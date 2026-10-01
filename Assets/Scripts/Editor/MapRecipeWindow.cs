@@ -111,7 +111,7 @@ public class MapRecipeWindow : EditorWindow
         }
 
         EditorGUILayout.HelpBox(
-            "Chapter 1.1 builds the Market only: plaza, orange shop blocks, stall canopies, parasols, a small kiosk, and courtyard flags. Farm, Industrial, Airport, roads, and capture wiring come later.",
+            "Chapter 1.1 builds the Market only: plaza, orange shop blocks, stall canopies, parasols, a small kiosk, and courtyard flags. Farm, Industrial, and Airport are sector looks in the map editor, not this stamp.",
             MessageType.None);
     }
 }
