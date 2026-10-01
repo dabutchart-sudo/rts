@@ -18,7 +18,37 @@ public class UIManager : MonoBehaviour
     void Awake()
     {
         if (Instance == null) Instance = this;
-        else Destroy(gameObject);
+        else
+        {
+            Destroy(gameObject);
+            return;
+        }
+
+        EnsureStatsText();
+    }
+
+    void EnsureStatsText()
+    {
+        if (statsText == null)
+        {
+            TextMeshProUGUI[] labels = GetComponentsInChildren<TextMeshProUGUI>(true);
+            for (int i = 0; i < labels.Length; i++)
+            {
+                if (labels[i] != null && labels[i].gameObject.name == "TicketText")
+                {
+                    statsText = labels[i];
+                    break;
+                }
+            }
+        }
+
+        if (statsText == null) return;
+
+        RectTransform rect = statsText.rectTransform;
+        rect.sizeDelta = new Vector2(560f, 170f);
+        statsText.fontSize = 28f;
+        statsText.alignment = TextAlignmentOptions.TopLeft;
+        statsText.overflowMode = TextOverflowModes.Overflow;
     }
 
     void Start()
@@ -54,9 +84,25 @@ public class UIManager : MonoBehaviour
     public void UpdateXP(int currentXP) { }
     // -------------------------------------------------
 
+    public void SetMatchReadoutVisible(bool visible)
+    {
+        if (!visible) ClearSectorStatuses();
+        if (captureText != null) captureText.gameObject.SetActive(visible);
+        if (statsText != null) statsText.gameObject.SetActive(visible);
+        if (!visible) HideGameOver();
+    }
+
+    public void HideGameOver()
+    {
+        if (gameOverText == null) return;
+        StopAllCoroutines();
+        gameOverText.gameObject.SetActive(false);
+    }
+
     public void UpdateCaptureStatus(string capturePointName, float progress, int attackers, int defenders)
     {
-        if (captureText == null) return;
+        if (captureText == null || !captureText.gameObject.activeInHierarchy) return;
+        if (MapSession.phase == MapSession.Phase.Menu || MapSession.phase == MapSession.Phase.Edit) return;
 
         int displayPercentage = Mathf.Abs(Mathf.RoundToInt(progress));
         string statusText = "";

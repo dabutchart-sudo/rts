@@ -1,0 +1,944 @@
+using System.Collections.Generic;
+using Unity.AI.Navigation;
+using UnityEngine;
+using UnityEngine.AI;
+
+public class PlayableMapBuilder
+{
+    public const string RootName = "GeneratedMap";
+
+    static readonly string[] OriginalBattlefieldNames =
+    {
+        "Ground",
+        "CaptureZone_A",
+        "CaptureZone_B",
+        "ObjectiveTarget",
+        "TankSpawner"
+    };
+
+    static readonly Color[] SectorColors =
+    {
+        new Color(0.45f, 0.55f, 0.38f),
+        new Color(0.40f, 0.50f, 0.58f),
+        new Color(0.58f, 0.48f, 0.36f),
+        new Color(0.42f, 0.54f, 0.50f),
+        new Color(0.54f, 0.42f, 0.50f),
+        new Color(0.50f, 0.50f, 0.40f)
+    };
+
+    static readonly List<GameObject> HiddenOriginal = new List<GameObject>();
+
+    readonly List<BuiltSector> built = new List<BuiltSector>();
+    readonly List<Transform> depthHandles = new List<Transform>();
+
+    PlayableMapDefinition map;
+    GameObject root;
+    Transform ground;
+    Transform handlesRoot;
+    Transform widthMin;
+    Transform widthMax;
+    Transform decorationRoot;
+    Transform verge;
+    Transform spineRoad;
+    Transform spineLine;
+    Transform placedRoadRoot;
+    Transform roadDraft;
+    readonly List<Transform> crossRoads = new List<Transform>();
+    Sector[] wired;
+
+    class BuiltSector
+    {
+        public Transform tint;
+        public Transform label;
+        public readonly List<Transform> points = new List<Transform>();
+        public Transform attacker;
+        public Transform defender;
+        public CapturePoint[] capturePoints;
+        public BaseZone attackerBase;
+        public BaseZone defenderBase;
+    }
+
+    public static void ForgetHiddenOriginal()
+    {
+        HiddenOriginal.Clear();
+    }
+
+    public static void HideOriginalBattlefield()
+    {
+        RestoreOriginalBattlefield();
+        foreach (string objectName in OriginalBattlefieldNames)
+        {
+            GameObject battlefieldObject = GameObject.Find(objectName);
+            if (battlefieldObject == null) continue;
+
+            NavMeshSurface surface = battlefieldObject.GetComponent<NavMeshSurface>();
+            if (surface != null) surface.RemoveData();
+
+            battlefieldObject.SetActive(false);
+            HiddenOriginal.Add(battlefieldObject);
+        }
+    }
+
+    public static void RestoreOriginalBattlefield()
+    {
+        for (int i = 0; i < HiddenOriginal.Count; i++)
+        {
+            if (HiddenOriginal[i] != null) HiddenOriginal[i].SetActive(true);
+        }
+
+        HiddenOriginal.Clear();
+    }
+
+    public void ClearGenerated()
+    {
+        GameObject existing = GameObject.Find(RootName);
+        if (existing != null) Object.Destroy(existing);
+        root = null;
+        ground = null;
+        handlesRoot = null;
+        widthMin = null;
+        widthMax = null;
+        decorationRoot = null;
+        verge = null;
+        spineRoad = null;
+        spineLine = null;
+        placedRoadRoot = null;
+        roadDraft = null;
+        wired = null;
+        built.Clear();
+        depthHandles.Clear();
+        crossRoads.Clear();
+    }
+
+    public void Build(PlayableMapDefinition definition, bool editing)
+    {
+        ClearGenerated();
+        map = definition;
+        if (map == null) return;
+        map.Normalize();
+
+        root = new GameObject(RootName);
+        ground = CreateCube("Ground", root.transform, new Color(0.30f, 0.32f, 0.26f)).transform;
+        verge = CreateSurface("Verge", root.transform, new Color(0.20f, 0.24f, 0.18f));
+        spineRoad = CreateSurface("Spine Road", root.transform, new Color(0.16f, 0.16f, 0.15f));
+        spineLine = CreateSurface("Spine Line", root.transform, new Color(0.75f, 0.72f, 0.55f));
+        for (int crossing = 1; crossing < map.sectors.Count; crossing++)
+        {
+            crossRoads.Add(CreateSurface("Crossing " + crossing, root.transform, new Color(0.16f, 0.16f, 0.15f)));
+        }
+
+        roadDraft = CreateSurface("Road Draft", root.transform, new Color(0.95f, 0.85f, 0.35f));
+        roadDraft.gameObject.SetActive(false);
+
+        for (int i = 0; i < map.sectors.Count; i++)
+        {
+            PlayableSectorDefinition sector = map.sectors[i];
+            var visual = new BuiltSector();
+            Color tintColor = SectorColors[i % SectorColors.Length];
+            visual.tint = CreateCube("Sector " + (char)('A' + i), root.transform, tintColor).transform;
+            RemoveCollider(visual.tint.gameObject);
+            visual.label = AddLabel(root.transform, sector.sectorName);
+
+            visual.capturePoints = new CapturePoint[sector.controlPoints.Count];
+            for (int p = 0; p < sector.controlPoints.Count; p++)
+            {
+                Transform point = CreateControlPoint(root.transform, sector.sectorName, i, p);
+                visual.points.Add(point);
+                visual.capturePoints[p] = point.GetComponent<CapturePoint>();
+            }
+
+            visual.attacker = CreateSpawn(root.transform, Faction.Attacker, i);
+            visual.defender = CreateSpawn(root.transform, Faction.Defender, i);
+            visual.attackerBase = visual.attacker.GetComponent<BaseZone>();
+            visual.defenderBase = visual.defender.GetComponent<BaseZone>();
+            built.Add(visual);
+        }
+
+        handlesRoot = new GameObject("Borders").transform;
+        handlesRoot.SetParent(root.transform, false);
+        for (int edge = 0; edge <= map.sectors.Count; edge++)
+        {
+            Transform handle = CreateBorderHandle(handlesRoot, MapEditHandle.Kind.DepthEdge, -1, edge);
+            depthHandles.Add(handle);
+        }
+
+        widthMin = CreateBorderHandle(handlesRoot, MapEditHandle.Kind.WidthMin, -1, -1);
+        widthMax = CreateBorderHandle(handlesRoot, MapEditHandle.Kind.WidthMax, -1, -1);
+
+        ApplyToGameManager();
+        Sync();
+        SetEditing(editing);
+    }
+
+    public void Sync()
+    {
+        if (map == null || root == null || built.Count != map.sectors.Count) return;
+
+        map.Normalize();
+        float minZ = map.sectors[0].minZ;
+        float maxZ = map.sectors[map.sectors.Count - 1].maxZ;
+        float width = Mathf.Max(1f, map.maxX - map.minX);
+        float depth = Mathf.Max(1f, maxZ - minZ);
+        float centerX = (map.minX + map.maxX) * 0.5f;
+        float centerZ = (minZ + maxZ) * 0.5f;
+
+        ground.position = new Vector3(centerX, -0.25f, centerZ);
+        ground.localScale = new Vector3(width, 0.5f, depth);
+        if (verge != null)
+        {
+            verge.position = new Vector3(centerX, -0.2f, centerZ);
+            verge.localScale = new Vector3(width + 16f, 0.2f, depth + 16f);
+        }
+
+        if (spineRoad != null)
+        {
+            spineRoad.position = new Vector3(centerX, 0.24f, centerZ);
+            spineRoad.localScale = new Vector3(PlayableMapDefinition.SpineRoadWidth, 0.05f, depth);
+        }
+
+        if (spineLine != null)
+        {
+            spineLine.position = new Vector3(centerX, 0.28f, centerZ);
+            spineLine.localScale = new Vector3(0.4f, 0.03f, Mathf.Max(1f, depth - 2f));
+        }
+
+        for (int i = 0; i < crossRoads.Count; i++)
+        {
+            int boundary = i + 1;
+            if (boundary >= map.sectors.Count) break;
+            float edgeZ = map.sectors[boundary - 1].maxZ;
+            crossRoads[i].position = new Vector3(centerX, 0.24f, edgeZ);
+            crossRoads[i].localScale = new Vector3(width, 0.05f, 6f);
+        }
+
+        SyncPlacedRoads();
+
+        for (int i = 0; i < built.Count; i++)
+        {
+            PlayableSectorDefinition sector = map.sectors[i];
+            BuiltSector visual = built[i];
+            float sectorDepth = Mathf.Max(1f, sector.maxZ - sector.minZ);
+            visual.tint.position = new Vector3(centerX, 0.15f, (sector.minZ + sector.maxZ) * 0.5f);
+            visual.tint.localScale = new Vector3(Mathf.Max(1f, width - 1.4f), 0.08f, Mathf.Max(1f, sectorDepth - 1.4f));
+            Color tint = SectorColors[i % SectorColors.Length];
+            if (sector.dressing == MapDistrictKind.Farm) tint = new Color(0.34f, 0.48f, 0.24f);
+            TintExisting(visual.tint.gameObject, tint);
+            if (visual.label != null)
+            {
+                visual.label.position = new Vector3(centerX, 0.45f, (sector.minZ + sector.maxZ) * 0.5f);
+                visual.label.rotation = Quaternion.Euler(90f, 0f, 0f);
+                visual.label.localScale = Vector3.one;
+            }
+
+            for (int p = 0; p < visual.points.Count && p < sector.controlPoints.Count; p++)
+            {
+                visual.points[p].position = sector.controlPoints[p];
+            }
+
+            visual.attacker.position = sector.attackerSpawn;
+            visual.defender.position = sector.defenderSpawn;
+            if (visual.attackerBase != null) visual.attackerBase.RefreshVisual();
+            if (visual.defenderBase != null) visual.defenderBase.RefreshVisual();
+
+            if (wired != null && i < wired.Length)
+            {
+                wired[i].sectorName = sector.sectorName;
+                wired[i].sectorBounds = map.SectorBounds(i);
+            }
+        }
+
+        for (int edge = 0; edge < depthHandles.Count; edge++)
+        {
+            float edgeZ = edge <= 0 ? minZ : (edge >= map.sectors.Count ? maxZ : map.sectors[edge - 1].maxZ);
+            Transform handle = depthHandles[edge];
+            handle.position = new Vector3(centerX, 1.4f, edgeZ);
+            handle.localScale = new Vector3(width, 2.2f, 2.2f);
+        }
+
+        if (widthMin != null)
+        {
+            widthMin.position = new Vector3(map.minX, 1.4f, centerZ);
+            widthMin.localScale = new Vector3(2.2f, 2.2f, depth);
+        }
+
+        if (widthMax != null)
+        {
+            widthMax.position = new Vector3(map.maxX, 1.4f, centerZ);
+            widthMax.localScale = new Vector3(2.2f, 2.2f, depth);
+        }
+
+        map.EnsureDecoration();
+        map.EnsureFarmLandmarks();
+        SyncDecoration();
+    }
+
+    public void SetEditing(bool editing)
+    {
+        if (handlesRoot != null) handlesRoot.gameObject.SetActive(editing);
+
+        foreach (BuiltSector visual in built)
+        {
+            foreach (Transform point in visual.points)
+            {
+                Transform grab = point.Find("Grab");
+                if (grab != null) grab.gameObject.SetActive(editing);
+            }
+
+            SetGrabActive(visual.attacker, editing);
+            SetGrabActive(visual.defender, editing);
+        }
+
+        if (decorationRoot != null)
+        {
+            for (int i = 0; i < decorationRoot.childCount; i++)
+            {
+                Transform piece = decorationRoot.GetChild(i);
+                SetGrabActive(piece, editing);
+                Transform remove = piece.Find("Remove");
+                if (remove != null) remove.gameObject.SetActive(editing);
+            }
+        }
+
+        if (placedRoadRoot != null)
+        {
+            for (int i = 0; i < placedRoadRoot.childCount; i++)
+            {
+                Transform remove = placedRoadRoot.GetChild(i).Find("Remove");
+                if (remove != null) remove.gameObject.SetActive(editing);
+            }
+        }
+
+        if (!editing && roadDraft != null) roadDraft.gameObject.SetActive(false);
+    }
+
+    public void SetRoadDraft(bool visible, Vector3 world)
+    {
+        if (roadDraft == null) return;
+        roadDraft.gameObject.SetActive(visible);
+        if (!visible) return;
+        roadDraft.position = new Vector3(world.x, 1.2f, world.z);
+        roadDraft.localScale = new Vector3(1.4f, 1.4f, 1.4f);
+    }
+
+    void SyncPlacedRoads()
+    {
+        if (root == null || map == null) return;
+        map.Normalize();
+        if (placedRoadRoot == null)
+        {
+            var roadObject = new GameObject("Placed Roads");
+            roadObject.transform.SetParent(root.transform, false);
+            placedRoadRoot = roadObject.transform;
+        }
+
+        var alive = new HashSet<string>();
+        for (int i = 0; i < map.roads.Count; i++)
+        {
+            PlayableRoadSegment road = map.roads[i];
+            if (road == null || string.IsNullOrEmpty(road.roadId)) continue;
+            alive.Add(road.roadId);
+            Transform visual = placedRoadRoot.Find(road.roadId);
+            if (visual == null) visual = CreatePlacedRoad(road.roadId);
+            PosePlacedRoad(visual, road);
+        }
+
+        for (int i = placedRoadRoot.childCount - 1; i >= 0; i--)
+        {
+            Transform child = placedRoadRoot.GetChild(i);
+            if (!alive.Contains(child.name)) Object.Destroy(child.gameObject);
+        }
+    }
+
+    Transform CreatePlacedRoad(string roadId)
+    {
+        var visual = new GameObject(roadId);
+        visual.transform.SetParent(placedRoadRoot, false);
+        CreateSurface("Slab", visual.transform, new Color(0.16f, 0.16f, 0.15f));
+        CreateSurface("Line", visual.transform, new Color(0.75f, 0.72f, 0.55f));
+
+        BoxCollider picker = visual.AddComponent<BoxCollider>();
+        picker.isTrigger = true;
+        MapEditHandle marker = visual.AddComponent<MapEditHandle>();
+        marker.kind = MapEditHandle.Kind.PlacedRoadRemove;
+        marker.decorationId = roadId;
+        return visual.transform;
+    }
+
+    static void PosePlacedRoad(Transform visual, PlayableRoadSegment road)
+    {
+        bool alongX = Mathf.Abs(road.end.x - road.start.x) >= Mathf.Abs(road.end.z - road.start.z);
+        Vector3 middle = (road.start + road.end) * 0.5f;
+        float length = Mathf.Max(1f, Vector3.Distance(road.start, road.end));
+        float width = alongX ? 6f : PlayableMapDefinition.SpineRoadWidth;
+
+        Transform slab = visual.Find("Slab");
+        if (slab != null)
+        {
+            slab.position = new Vector3(middle.x, 0.24f, middle.z);
+            slab.localScale = alongX
+                ? new Vector3(length, 0.05f, width)
+                : new Vector3(width, 0.05f, length);
+        }
+
+        Transform line = visual.Find("Line");
+        if (line != null)
+        {
+            line.position = new Vector3(middle.x, 0.28f, middle.z);
+            line.localScale = alongX
+                ? new Vector3(Mathf.Max(1f, length - 1f), 0.03f, 0.4f)
+                : new Vector3(0.4f, 0.03f, Mathf.Max(1f, length - 1f));
+        }
+
+        Transform remove = visual.Find("Remove");
+        if (remove != null)
+        {
+            remove.position = new Vector3(middle.x, 1.6f, middle.z);
+            remove.localScale = new Vector3(1.2f, 1.2f, 1.2f);
+        }
+
+        BoxCollider picker = visual.GetComponent<BoxCollider>();
+        if (picker != null)
+        {
+            picker.center = new Vector3(middle.x, 0.3f, middle.z);
+            picker.size = alongX
+                ? new Vector3(length, 0.4f, width)
+                : new Vector3(width, 0.4f, length);
+        }
+    }
+
+    const float DecorationScale = 4f;
+
+    void SyncDecoration()
+    {
+        if (root == null || map == null) return;
+        map.EnsureDecoration();
+        if (decorationRoot == null)
+        {
+            var decorationObject = new GameObject("Decoration");
+            decorationObject.transform.SetParent(root.transform, false);
+            decorationRoot = decorationObject.transform;
+        }
+
+        var alive = new HashSet<string>();
+        for (int i = 0; i < map.decoration.Count; i++)
+        {
+            PlayableDecorationPiece piece = map.decoration[i];
+            if (piece == null || string.IsNullOrEmpty(piece.pieceId)) continue;
+            alive.Add(piece.pieceId);
+            Transform visual = decorationRoot.Find(piece.pieceId);
+            if (visual == null) visual = CreateDecorationVisual(piece);
+            visual.position = piece.position;
+            visual.rotation = Quaternion.Euler(0f, piece.yaw, 0f);
+        }
+
+        for (int i = decorationRoot.childCount - 1; i >= 0; i--)
+        {
+            Transform child = decorationRoot.GetChild(i);
+            if (!alive.Contains(child.name)) Object.Destroy(child.gameObject);
+        }
+    }
+
+    Transform CreateDecorationVisual(PlayableDecorationPiece piece)
+    {
+        var visual = new GameObject(piece.pieceId);
+        visual.transform.SetParent(decorationRoot, false);
+        visual.transform.localScale = Vector3.one * DecorationScale;
+
+        GameObject model = CreateDecorationModel(piece.catalogId);
+        model.transform.SetParent(visual.transform, false);
+
+        DecorationCatalog.Entry entry = DecorationCatalog.Find(piece.catalogId);
+        float footprint = entry.footprint > 0.1f ? entry.footprint : 0.9f;
+        BoxCollider obstacle = visual.AddComponent<BoxCollider>();
+        obstacle.center = new Vector3(0f, 0.25f, 0f);
+        obstacle.size = new Vector3(footprint, 0.5f, footprint);
+
+        MapEditHandle marker = visual.AddComponent<MapEditHandle>();
+        marker.kind = MapEditHandle.Kind.Decoration;
+        marker.decorationId = piece.pieceId;
+        CreateSelectionRing(visual.transform, footprint * 0.55f);
+        return visual.transform;
+    }
+
+    static void CreateSelectionRing(Transform parent, float radius)
+    {
+        GameObject ringObject = new GameObject("Select");
+        ringObject.transform.SetParent(parent, false);
+        ringObject.transform.localPosition = new Vector3(0f, 0.08f, 0f);
+        LineRenderer ring = ringObject.AddComponent<LineRenderer>();
+        ring.useWorldSpace = false;
+        ring.loop = true;
+        ring.positionCount = 28;
+        ring.startWidth = 0.06f;
+        ring.endWidth = 0.06f;
+        ring.alignment = LineAlignment.TransformZ;
+        Shader shader = Shader.Find("Sprites/Default");
+        if (shader != null) ring.material = new Material(shader);
+        ring.startColor = new Color(0.95f, 0.85f, 0.35f, 1f);
+        ring.endColor = ring.startColor;
+        for (int i = 0; i < ring.positionCount; i++)
+        {
+            float angle = (i / (float)ring.positionCount) * Mathf.PI * 2f;
+            ring.SetPosition(i, new Vector3(Mathf.Cos(angle) * radius, 0f, Mathf.Sin(angle) * radius));
+        }
+
+        ringObject.SetActive(false);
+    }
+
+    public void HighlightDecoration(string pieceId)
+    {
+        if (decorationRoot == null) return;
+        for (int i = 0; i < decorationRoot.childCount; i++)
+        {
+            Transform piece = decorationRoot.GetChild(i);
+            Transform ring = piece.Find("Select");
+            if (ring != null) ring.gameObject.SetActive(piece.name == pieceId);
+        }
+    }
+
+    void CreateDecorationHandle(Transform parent, string objectName, MapEditHandle.Kind kind, string pieceId, Vector3 localPosition, Color color, float worldSize)
+    {
+        GameObject handle = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        handle.name = objectName;
+        handle.transform.SetParent(parent, false);
+        handle.transform.localPosition = localPosition;
+        handle.transform.localScale = Vector3.one * (worldSize / DecorationScale);
+        Paint(handle, color);
+        MapEditHandle marker = handle.AddComponent<MapEditHandle>();
+        marker.kind = kind;
+        marker.decorationId = pieceId;
+    }
+
+    static GameObject CreateFarmProp(string catalogId)
+    {
+        var root = new GameObject(catalogId);
+        switch (catalogId)
+        {
+            case "crop-row":
+                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(0f, 0.06f, -0.28f), new Vector3(1.3f, 0.08f, 0.22f), new Color(0.28f, 0.45f, 0.18f));
+                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(0f, 0.06f, 0f), new Vector3(1.3f, 0.08f, 0.22f), new Color(0.36f, 0.32f, 0.16f));
+                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(0f, 0.06f, 0.28f), new Vector3(1.3f, 0.08f, 0.22f), new Color(0.28f, 0.45f, 0.18f));
+                break;
+            case "hay-bale":
+                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(0f, 0.22f, 0f), new Vector3(0.7f, 0.4f, 0.45f), new Color(0.72f, 0.58f, 0.22f));
+                break;
+            case "fence":
+                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(-0.45f, 0.28f, 0f), new Vector3(0.08f, 0.55f, 0.08f), new Color(0.42f, 0.28f, 0.16f));
+                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(0.45f, 0.28f, 0f), new Vector3(0.08f, 0.55f, 0.08f), new Color(0.42f, 0.28f, 0.16f));
+                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(0f, 0.38f, 0f), new Vector3(1.05f, 0.08f, 0.08f), new Color(0.5f, 0.34f, 0.18f));
+                break;
+            case "barn":
+                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(0f, 0.45f, 0f), new Vector3(1.6f, 0.85f, 1.1f), new Color(0.55f, 0.18f, 0.14f));
+                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(0f, 1.0f, 0f), new Vector3(1.75f, 0.22f, 1.25f), new Color(0.32f, 0.18f, 0.12f));
+                break;
+            case "silo":
+                AddFarmPart(root.transform, PrimitiveType.Cylinder, new Vector3(0f, 0.7f, 0f), new Vector3(0.55f, 0.7f, 0.55f), new Color(0.78f, 0.78f, 0.74f));
+                AddFarmPart(root.transform, PrimitiveType.Cylinder, new Vector3(0f, 1.45f, 0f), new Vector3(0.62f, 0.08f, 0.62f), new Color(0.45f, 0.28f, 0.18f));
+                break;
+            default:
+                AddFarmPart(root.transform, PrimitiveType.Cube, new Vector3(0f, 0.22f, 0f), new Vector3(0.8f, 0.45f, 0.8f), new Color(0.4f, 0.42f, 0.28f));
+                break;
+        }
+
+        return root;
+    }
+
+    static void AddFarmPart(Transform parent, PrimitiveType type, Vector3 localPosition, Vector3 localScale, Color color)
+    {
+        GameObject part = GameObject.CreatePrimitive(type);
+        part.transform.SetParent(parent, false);
+        part.transform.localPosition = localPosition;
+        part.transform.localScale = localScale;
+        Collider collider = part.GetComponent<Collider>();
+        if (collider != null)
+        {
+            collider.enabled = false;
+            Object.Destroy(collider);
+        }
+
+        Paint(part, color);
+    }
+
+    static GameObject CreateDecorationModel(string catalogId)
+    {
+        DecorationCatalog.Entry entry = DecorationCatalog.Find(catalogId);
+        if (string.IsNullOrEmpty(entry.modelFileName)) return CreateFarmProp(catalogId);
+        string modelName = entry.modelFileName;
+
+#if UNITY_EDITOR
+        GameObject prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
+            MarketDistrictLayout.ModelFolder + "/" + modelName + ".fbx");
+        if (prefab != null)
+        {
+            GameObject model = Object.Instantiate(prefab);
+            foreach (Collider collider in model.GetComponentsInChildren<Collider>())
+            {
+                collider.enabled = false;
+                Object.Destroy(collider);
+            }
+
+            return model;
+        }
+#endif
+
+        GameObject fallback = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        fallback.transform.localScale = new Vector3(0.8f, 0.45f, 0.8f);
+        fallback.transform.localPosition = new Vector3(0f, 0.22f, 0f);
+        Collider fallbackCollider = fallback.GetComponent<Collider>();
+        if (fallbackCollider != null)
+        {
+            fallbackCollider.enabled = false;
+            Object.Destroy(fallbackCollider);
+        }
+
+        return fallback;
+    }
+
+    public void BakeNavigation()
+    {
+        if (root == null || map == null) return;
+
+        SetEditing(false);
+        NavMeshSurface surface = root.GetComponent<NavMeshSurface>();
+        if (surface == null) surface = root.AddComponent<NavMeshSurface>();
+
+        Bounds bounds = map.WorldBounds();
+        surface.agentTypeID = 0;
+        surface.collectObjects = CollectObjects.Volume;
+        surface.useGeometry = NavMeshCollectGeometry.PhysicsColliders;
+        surface.center = new Vector3(bounds.center.x, 2f, bounds.center.z);
+        surface.size = new Vector3(bounds.size.x + 4f, 10f, bounds.size.z + 4f);
+        surface.BuildNavMesh();
+    }
+
+    public static void FrameCamera(Bounds bounds)
+    {
+        Camera cam = Camera.main;
+        if (cam == null) return;
+
+        float span = Mathf.Max(bounds.size.x, bounds.size.z, 20f);
+        Vector3 look = bounds.center;
+        look.y = 0f;
+        cam.transform.position = look + new Vector3(0f, span * 0.9f, -span * 0.72f);
+        cam.transform.rotation = Quaternion.LookRotation(look - cam.transform.position, Vector3.up);
+
+        RTSCamera rtsCamera = cam.GetComponent<RTSCamera>();
+        if (rtsCamera != null)
+        {
+            float framedHeight = cam.transform.position.y;
+            rtsCamera.maxZoomHeight = Mathf.Max(80f, framedHeight * 1.35f);
+            rtsCamera.minZoomHeight = Mathf.Min(rtsCamera.minZoomHeight, 8f);
+        }
+    }
+
+    public static void EnsureGameplayLinks(GameManager gameManager)
+    {
+        if (gameManager == null) return;
+
+        UnitSpawner attacker = FindSpawner("AttackerSpawner");
+        UnitSpawner defender = FindSpawner("DefenderSpawner");
+
+        if (attacker != null)
+        {
+            attacker.isDefenderSpawner = false;
+            if (attacker.assaultPrefab == null)
+            {
+                attacker.assaultPrefab = LoadUnitPrefab("Assets/Prefabs/Units/Assault_Attacker.prefab");
+            }
+
+            gameManager.attackerSpawner = attacker;
+        }
+
+        if (defender != null)
+        {
+            defender.isDefenderSpawner = true;
+            if (defender.assaultPrefab == null)
+            {
+                defender.assaultPrefab = LoadUnitPrefab("Assets/Prefabs/Units/Assault_Defender.prefab");
+            }
+
+            gameManager.defenderSpawner = defender;
+        }
+    }
+
+    public static void LinkOriginal(GameManager gameManager)
+    {
+        if (gameManager == null) return;
+        if (HasWiredSectors(gameManager)) return;
+
+        var points = new List<CapturePoint>();
+        foreach (CapturePoint point in Object.FindObjectsByType<CapturePoint>(FindObjectsInactive.Exclude))
+        {
+            if (point == null) continue;
+            if (point.transform.root != null && point.transform.root.name == RootName) continue;
+            points.Add(point);
+        }
+
+        points.Sort((a, b) => a.transform.position.z.CompareTo(b.transform.position.z));
+        if (points.Count == 0)
+        {
+            Debug.LogWarning("Original map has no capture points to run a Breakthrough match.");
+            return;
+        }
+
+        Renderer groundRenderer = null;
+        GameObject groundObject = GameObject.Find("Ground");
+        if (groundObject != null) groundRenderer = groundObject.GetComponent<Renderer>();
+        Bounds groundBounds = groundRenderer != null
+            ? groundRenderer.bounds
+            : new Bounds(Vector3.zero, new Vector3(50f, 10f, 160f));
+
+        GameObject links = new GameObject("OriginalLinks");
+        float slice = groundBounds.size.z / points.Count;
+        var sectors = new Sector[points.Count];
+        Transform attackerSpawner = FindSpawner("AttackerSpawner") != null ? FindSpawner("AttackerSpawner").transform : null;
+        Transform defenderSpawner = FindSpawner("DefenderSpawner") != null ? FindSpawner("DefenderSpawner").transform : null;
+
+        for (int i = 0; i < points.Count; i++)
+        {
+            float z0 = groundBounds.min.z + (slice * i);
+            float z1 = z0 + slice;
+            float inset = Mathf.Min(12f, slice * 0.2f);
+            Vector3 attackerPos = new Vector3(groundBounds.center.x, 0.5f, z0 + inset);
+            Vector3 defenderPos = new Vector3(groundBounds.center.x, 0.5f, z1 - inset);
+
+            if (attackerSpawner != null && ContainsXZ(groundBounds, attackerSpawner.position, z0, z1))
+            {
+                attackerPos = attackerSpawner.position;
+                attackerPos.y = 0.5f;
+            }
+
+            if (defenderSpawner != null && ContainsXZ(groundBounds, defenderSpawner.position, z0, z1))
+            {
+                defenderPos = defenderSpawner.position;
+                defenderPos.y = 0.5f;
+            }
+
+            char letter = (char)('A' + i);
+            points[i].capturePointName = "Sector " + letter;
+            points[i].activeDuringSectorIndex = i;
+
+            BaseZone attackerBase = CreateLinkedBase(links.transform, "Attacker Base " + letter, Faction.Attacker, attackerPos);
+            BaseZone defenderBase = CreateLinkedBase(links.transform, "Defender Base " + letter, Faction.Defender, defenderPos);
+
+            sectors[i] = new Sector
+            {
+                sectorName = "Sector " + letter,
+                sectorAnnouncementText = "SECURE ALL OBJECTIVES",
+                capturePoints = new[] { points[i] },
+                attackerBase = attackerBase,
+                defenderBase = defenderBase,
+                sectorBounds = new Bounds(
+                    new Vector3(groundBounds.center.x, 10f, (z0 + z1) * 0.5f),
+                    new Vector3(groundBounds.size.x, 40f, Mathf.Max(1f, slice)))
+            };
+        }
+
+        gameManager.UseSectors(sectors);
+    }
+
+    static bool HasWiredSectors(GameManager gameManager)
+    {
+        if (gameManager.sectors == null || gameManager.sectors.Length == 0) return false;
+        Sector first = gameManager.sectors[0];
+        return first != null && first.capturePoints != null && first.capturePoints.Length > 0 && first.capturePoints[0] != null;
+    }
+
+    static bool ContainsXZ(Bounds groundBounds, Vector3 point, float z0, float z1)
+    {
+        return point.x >= groundBounds.min.x && point.x <= groundBounds.max.x && point.z >= z0 && point.z <= z1;
+    }
+
+    static BaseZone CreateLinkedBase(Transform parent, string objectName, Faction faction, Vector3 position)
+    {
+        GameObject baseObject = new GameObject(objectName);
+        baseObject.transform.SetParent(parent, false);
+        baseObject.transform.position = position;
+        BaseZone zone = baseObject.AddComponent<BaseZone>();
+        zone.controllingFaction = faction;
+        zone.spawnPoint = baseObject.transform;
+        zone.baseName = objectName;
+        zone.RefreshVisual();
+        return zone;
+    }
+
+    void ApplyToGameManager()
+    {
+        GameManager gameManager = GameManager.Instance;
+        if (gameManager == null) return;
+
+        wired = new Sector[built.Count];
+        for (int i = 0; i < built.Count; i++)
+        {
+            wired[i] = new Sector
+            {
+                sectorName = map.sectors[i].sectorName,
+                sectorAnnouncementText = "SECURE ALL OBJECTIVES",
+                capturePoints = built[i].capturePoints,
+                attackerBase = built[i].attackerBase,
+                defenderBase = built[i].defenderBase,
+                sectorBounds = map.SectorBounds(i)
+            };
+        }
+
+        gameManager.UseSectors(wired);
+    }
+
+    Transform CreateControlPoint(Transform parent, string sectorName, int sectorIndex, int pointIndex)
+    {
+        GameObject point = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+        point.name = sectorName + " Point " + (pointIndex + 1);
+        point.transform.SetParent(parent, false);
+        point.transform.localScale = new Vector3(4f, 0.25f, 4f);
+        RemoveCollider(point);
+
+        BoxCollider trigger = point.AddComponent<BoxCollider>();
+        trigger.isTrigger = true;
+        trigger.size = new Vector3(2.2f, 16f, 2.2f);
+        trigger.center = new Vector3(0f, 8f, 0f);
+
+        CapturePoint capture = point.AddComponent<CapturePoint>();
+        capture.capturePointName = sectorName + " " + (pointIndex + 1);
+        capture.activeDuringSectorIndex = sectorIndex;
+        Paint(point, new Color(0.85f, 0.7f, 0.25f));
+
+        GameObject grab = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        grab.name = "Grab";
+        grab.transform.SetParent(point.transform, false);
+        grab.transform.localPosition = new Vector3(0f, 3f, 0f);
+        grab.transform.localScale = new Vector3(0.45f, 6f, 0.45f);
+        Paint(grab, new Color(0.95f, 0.85f, 0.4f));
+        MapEditHandle handle = grab.AddComponent<MapEditHandle>();
+        handle.kind = MapEditHandle.Kind.ControlPoint;
+        handle.sectorIndex = sectorIndex;
+        handle.pointIndex = pointIndex;
+        return point.transform;
+    }
+
+    Transform CreateSpawn(Transform parent, Faction faction, int sectorIndex)
+    {
+        bool attacker = faction == Faction.Attacker;
+        GameObject spawn = new GameObject(attacker ? "Attacker Spawn" : "Defender Spawn");
+        spawn.transform.SetParent(parent, false);
+        BaseZone zone = spawn.AddComponent<BaseZone>();
+        zone.controllingFaction = faction;
+        zone.spawnPoint = spawn.transform;
+        zone.baseName = attacker ? "Attacker Spawn" : "Defender Spawn";
+        zone.RefreshVisual();
+
+        GameObject grab = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        grab.name = "Grab";
+        grab.transform.SetParent(spawn.transform, false);
+        grab.transform.localScale = new Vector3(3.2f, 3.2f, 3.2f);
+        Paint(grab, attacker ? new Color(0.85f, 0.25f, 0.22f) : new Color(0.25f, 0.45f, 0.9f));
+        MapEditHandle handle = grab.AddComponent<MapEditHandle>();
+        handle.kind = attacker ? MapEditHandle.Kind.AttackerSpawn : MapEditHandle.Kind.DefenderSpawn;
+        handle.sectorIndex = sectorIndex;
+        return spawn.transform;
+    }
+
+    Transform CreateBorderHandle(Transform parent, MapEditHandle.Kind kind, int sectorIndex, int edgeIndex)
+    {
+        GameObject handleObject = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        handleObject.name = kind.ToString();
+        handleObject.transform.SetParent(parent, false);
+        Paint(handleObject, new Color(0.95f, 0.95f, 0.95f, 1f));
+        MapEditHandle handle = handleObject.AddComponent<MapEditHandle>();
+        handle.kind = kind;
+        handle.sectorIndex = sectorIndex;
+        handle.depthEdgeIndex = edgeIndex;
+        return handleObject.transform;
+    }
+
+    static void SetGrabActive(Transform owner, bool active)
+    {
+        if (owner == null) return;
+        Transform grab = owner.Find("Grab");
+        if (grab != null) grab.gameObject.SetActive(active);
+    }
+
+    static GameObject CreateCube(string objectName, Transform parent, Color color)
+    {
+        GameObject cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        cube.name = objectName;
+        cube.transform.SetParent(parent, false);
+        Paint(cube, color);
+        return cube;
+    }
+
+    static Transform CreateSurface(string objectName, Transform parent, Color color)
+    {
+        GameObject surface = CreateCube(objectName, parent, color);
+        RemoveCollider(surface);
+        return surface.transform;
+    }
+
+    static void TintExisting(GameObject target, Color color)
+    {
+        Renderer renderer = target.GetComponent<Renderer>();
+        if (renderer == null) return;
+        Material material = renderer.material;
+        if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
+        if (material.HasProperty("_Color")) material.SetColor("_Color", color);
+        material.color = color;
+    }
+
+    static void Paint(GameObject target, Color color)
+    {
+        Renderer renderer = target.GetComponent<Renderer>();
+        if (renderer == null) return;
+        renderer.material = CreateMaterial(color);
+        renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+    }
+
+    static Material CreateMaterial(Color color)
+    {
+        Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+        if (shader == null) shader = Shader.Find("Standard");
+        var material = new Material(shader);
+        if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
+        if (material.HasProperty("_Color")) material.SetColor("_Color", color);
+        material.color = color;
+        return material;
+    }
+
+    static void RemoveCollider(GameObject target)
+    {
+        Collider collider = target.GetComponent<Collider>();
+        if (collider != null) Object.Destroy(collider);
+    }
+
+    static Transform AddLabel(Transform parent, string text)
+    {
+        GameObject labelObject = new GameObject("Label");
+        labelObject.transform.SetParent(parent, false);
+        labelObject.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+        TextMesh mesh = labelObject.AddComponent<TextMesh>();
+        mesh.text = text;
+        mesh.fontSize = 48;
+        mesh.characterSize = 0.35f;
+        mesh.anchor = TextAnchor.MiddleCenter;
+        mesh.alignment = TextAlignment.Center;
+        mesh.color = new Color(1f, 1f, 1f, 0.92f);
+        Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        if (font != null) mesh.font = font;
+        return labelObject.transform;
+    }
+
+    static UnitSpawner FindSpawner(string objectName)
+    {
+        GameObject spawnerObject = GameObject.Find(objectName);
+        if (spawnerObject == null) return null;
+        return spawnerObject.GetComponent<UnitSpawner>();
+    }
+
+    static GameObject LoadUnitPrefab(string assetPath)
+    {
+#if UNITY_EDITOR
+        GameObject prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
+        if (prefab != null) return prefab;
+#endif
+        Debug.LogError("Could not load a unit prefab at " + assetPath + ". A generated match needs it on the spawner.");
+        return null;
+    }
+}

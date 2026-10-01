@@ -33,7 +33,7 @@ public class RTSCamera : MonoBehaviour
 
     void Update()
     {
-        if (GameManager.Instance == null || GameManager.Instance.playerFaction == Faction.None) return;
+        if (!MapSession.allowLookAround && (GameManager.Instance == null || GameManager.Instance.playerFaction == Faction.None)) return;
 
         HandleKeyboardPan();
         HandleKeyboardZoom();
@@ -85,8 +85,18 @@ public class RTSCamera : MonoBehaviour
 
         if (scrollDelta != Vector2.zero)
         {
-            Vector3 move = new Vector3(-scrollDelta.x, 0, -scrollDelta.y) * trackpadPanSpeed;
-            transform.position += move;
+            if (Mathf.Abs(scrollDelta.y) >= Mathf.Abs(scrollDelta.x))
+            {
+                float zoom = scrollDelta.y;
+                if (Mathf.Abs(zoom) > 10f) zoom *= 0.025f;
+                else zoom *= 0.4f;
+                ApplyZoom(zoom);
+            }
+            else
+            {
+                Vector3 move = new Vector3(-scrollDelta.x, 0, 0) * trackpadPanSpeed;
+                transform.position += move;
+            }
         }
     }
 
@@ -126,10 +136,10 @@ public class RTSCamera : MonoBehaviour
         // Move the camera along the direction it is currently facing
         Vector3 projectedPos = transform.position + (transform.forward * zoomAmount);
 
-        // Only apply the movement if it keeps the camera within our height limits
-        if (projectedPos.y >= minZoomHeight && projectedPos.y <= maxZoomHeight)
-        {
-            transform.position = projectedPos;
-        }
+        float nextHeight = projectedPos.y;
+        bool zoomingIn = nextHeight < transform.position.y;
+        if (zoomingIn && nextHeight < minZoomHeight) return;
+        if (!zoomingIn && nextHeight > maxZoomHeight) return;
+        transform.position = projectedPos;
     }
 }

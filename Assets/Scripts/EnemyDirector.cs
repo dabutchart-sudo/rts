@@ -19,6 +19,19 @@ public class EnemyDirector : MonoBehaviour
     public GameObject assaultAttackerPrefab;
     public GameObject engineerAttackerPrefab;
 
+    private int startingTickets;
+
+    void Awake()
+    {
+        startingTickets = aiTickets;
+    }
+
+    public void PrepareForRematch()
+    {
+        aiTickets = startingTickets;
+        isDirectorActive = false;
+    }
+
     void Start()
     {
         StartCoroutine(WaveCycle());

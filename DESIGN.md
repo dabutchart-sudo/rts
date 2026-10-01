@@ -23,18 +23,22 @@ The target experience is readable, fast, and satisfying in short sessions, with 
 - Captured sectors lock, the front line advances, defenders retreat, and the next sector opens after an intermission.
 - Attackers win by securing the final sector.
 - Defenders win by exhausting attacker tickets.
-- The player's faction is currently assigned randomly when a match starts.
+- The player chooses Attacker or Defender from the Play menu before the match starts. A match started without that choice still assigns a side at random.
 
 ## Tickets, spawning, and reinforcements
 
 ### Current implementation
 
 - Attackers begin with a configurable ticket pool and lose tickets when units are defeated.
-- Capturing a sector awards attacker tickets.
-- Both factions spawn an initial force.
-- Attackers can respawn after a delay.
-- Defenders receive reinforcement waves.
-- Spawn locations advance with the active sector.
+- Capturing a sector awards attacker tickets as soon as the sector is secured.
+- Both factions spawn an initial assault force, capped at 16 alive troops per side.
+- Survivors stay when a sector changes. Only the missing places are filled. Attacker replacements cost tickets. New attackers appear on a point that side already owns, in the sector they just took. Defenders fill up in the next sector.
+- One attacker squad stays to garrison each point that has been fully taken. The other squads keep moving.
+- Attackers are not moved into the next sector. They clear anyone still in the sector they took, then wait on their side of the line until it opens. They can walk back through sectors they already hold.
+- Defenders retreat on foot into the next sector. They are not removed and dropped there.
+- Points change hands more slowly than the original test pace, so a fight can last long enough to matter.
+- Attackers can respawn after a delay, up to the troop cap.
+- Defenders receive reinforcement waves, also up to the troop cap.
 - Defender ticket depletion is not yet fully enforced and requires validation.
 
 ### Intended direction
@@ -79,7 +83,11 @@ These are **design candidates**, not promises of current implementation. Each ne
 
 ## Maps and environment
 
-Maps should make the sector flow visually obvious and offer meaningful lanes, cover, defensible positions, and flanking routes. Future candidates include fortifications, enterable buildings, and destructible or interactive cover. The current repository contains a single primary Unity scene and greybox/map work on feature branches.
+Maps should make the sector flow visually obvious and offer meaningful lanes, cover, defensible positions, and flanking routes. Future candidates include fortifications, enterable buildings, and destructible or interactive cover.
+
+Playable maps are chosen from the opening menu before a match starts. That menu is a stack of wide rows on a plain black screen. **Play** asks for Attacker or Defender, then a map, and starts at normal speed so you can command your side. **Test** asks for a speed and how many matches, then a map, and runs those matches on it. **Edit** creates a blank map or opens a saved one. **ChatGPT Map** opens the greybox battlefield scene. **Unit Sandbox** opens the scene for trying unit behaviour. Both of those have a Main menu button to come back. **Original** is the hand-built battlefield in `SampleScene`. It can be played and tested, and it stays as the fallback. It is not editable. Any other map is a saved blank layout: ordered rectangular sectors in one strip, control points inside each sector, and one attacker spawn and one defender spawn per sector. You choose those counts on the editor, the game lays the strip out, and you drag borders, points, and spawns. Changing the counts rebuilds that default layout and keeps the name. Auto centre recentres spawns and control points inside the current sector sizes. A dragged point stays inside its sector. Saving writes a file the menu can open again. After a test, returning to edit stays on that map.
+
+A saved layout sits on a verge, with a road down the middle of the strip and a crossing where each sector meets the next. That centre line is a temporary default, accepted for now. You can also lay extra roads: two clicks, kept straight along the map or across it, saved with the map, and removed with the red sphere. The centre road stays when an added road is deleted. Later, roads should be freer than these straight runs. Resizing the map moves the centre road with the borders. Automatic dressing stays off the centre road and off roads you added. Pieces you place yourself can sit on a road. The layout can also dress itself. Each sector is either a market or a farm. A market uses the Kenney stalls and shops. A farm uses crop rows, hay, fences, and, if you place them, a barn or a silo. There is no separate farm model pack yet, so those farm pieces are simple shapes. A population slider from 1 to 20 sets how many pieces each sector tries to place. The editor lists a palette. Click a piece, then click the map to place it, or drag it off the list to drop one. A piece placed that way is kept immediately, as is one you later drag. The small red sphere deletes a piece, and that spot stays empty on the next automatic pass. Dress again replaces only the pieces you have not kept. The population level and the pieces are saved with the map. New palette pieces are added to one list, including future groups. Other district rules are still later. The Market preview stays a look check, not a playable Breakthrough map.
 
 ## Interface and accessibility
 

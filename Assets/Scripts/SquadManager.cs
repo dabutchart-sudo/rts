@@ -174,6 +174,21 @@ public sealed class SquadManager : MonoBehaviour
         return member != null ? member.Squad : null;
     }
 
+    public void ClearRostersForRematch()
+    {
+        ClearRosterList(attackerSquads);
+        ClearRosterList(defenderSquads);
+    }
+
+    private void ClearRosterList(List<Squad> squads)
+    {
+        if (squads == null) return;
+        foreach (Squad squad in squads)
+        {
+            if (squad != null) squad.ClearRoster();
+        }
+    }
+
     public void ClearStrategicObjectives()
     {
         ClearStrategicObjectives(attackerSquads);

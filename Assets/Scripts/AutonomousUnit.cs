@@ -10,6 +10,8 @@ public class AutonomousUnit : MonoBehaviour
     private bool hasDirectOrder = false;
     private bool isRegrouping = false;
     private float nextCohesionCheckTime = 0f;
+    private Vector3 lastTransitionDestination;
+    private float nextTransitionPathRefresh;
 
     [Header("AI Squad Movement")]
     [SerializeField] private float aiSquadSpacing = 2.2f;
@@ -72,6 +74,13 @@ public class AutonomousUnit : MonoBehaviour
     {
         if (GameManager.Instance == null) return;
 
+        if (GameManager.Instance.isTransitioningSector && isAttacker)
+        {
+            UpdateAttackerTransitionMovement();
+            CheckSectorBounds();
+            return;
+        }
+
         bool useStrategicAI = ControlModeManager.Instance == null || ControlModeManager.Instance.ShouldUseStrategicAI(gameObject);
 
         if (!hasDirectOrder && useStrategicAI)
@@ -125,6 +134,34 @@ public class AutonomousUnit : MonoBehaviour
     void LateUpdate()
     {
         AnimateMovement();
+    }
+
+    private void UpdateAttackerTransitionMovement()
+    {
+        if (agent == null) agent = GetComponent<NavMeshAgent>();
+        if (agent == null || !agent.enabled || !agent.isOnNavMesh) return;
+        if (GameManager.Instance == null) return;
+
+        if (!GameManager.Instance.TryGetAttackerTransitionDestination(gameObject, out Vector3 desired))
+        {
+            return;
+        }
+
+        if (NavMesh.SamplePosition(desired, out NavMeshHit hit, 3f, NavMesh.AllAreas))
+        {
+            desired = hit.position;
+        }
+
+        bool destinationChanged = (desired - lastTransitionDestination).sqrMagnitude > 0.25f;
+        if (destinationChanged || Time.time >= nextTransitionPathRefresh)
+        {
+            lastTransitionDestination = desired;
+            nextTransitionPathRefresh = Time.time + 0.25f;
+            currentObjective = null;
+            isRegrouping = false;
+            hasDirectOrder = false;
+            agent.SetDestination(desired);
+        }
     }
 
     private void AnimateMovement()
@@ -419,54 +456,48 @@ public class AutonomousUnit : MonoBehaviour
         return ControlModeManager.Instance != null && ControlModeManager.Instance.IsPlayerFaction(gameObject);
     }
 
+    private Faction GetFaction()
+    {
+        return isAttacker ? Faction.Attacker : Faction.Defender;
+    }
+
     private bool IsPositionWithinActiveBounds(Vector3 pos)
     {
-        if (GameManager.Instance == null || GameManager.Instance.sectors == null) return true;
-
-        if (GameManager.Instance.isTransitioningSector) return true;
-
-        int activeIndex = GameManager.Instance.currentSectorIndex;
-        if (activeIndex >= 0 && activeIndex < GameManager.Instance.sectors.Length)
-        {
-            Sector activeSector = GameManager.Instance.sectors[activeIndex];
-            if (activeSector.sectorBounds.size.sqrMagnitude > 0.01f)
-            {
-                return activeSector.sectorBounds.Contains(pos);
-            }
-        }
-        return true;
+        return BreakthroughFrontlineSystem.IsPositionAllowed(GetFaction(), pos);
     }
 
     private void CheckSectorBounds()
     {
-        if (GameManager.Instance == null || GameManager.Instance.sectors == null) return;
+        Faction faction = GetFaction();
+        if (BreakthroughFrontlineSystem.IsPositionAllowed(faction, transform.position)) return;
 
-        if (GameManager.Instance.isTransitioningSector) return;
-
-        int activeIndex = GameManager.Instance.currentSectorIndex;
-        if (activeIndex < 0 || activeIndex >= GameManager.Instance.sectors.Length) return;
-
-        Sector activeSector = GameManager.Instance.sectors[activeIndex];
-
-        if (activeSector.sectorBounds.size.sqrMagnitude > 0.01f)
+        if (!BreakthroughFrontlineSystem.TryGetClosestAllowedPoint(faction, transform.position, out Vector3 clampedPos))
         {
-            if (!activeSector.sectorBounds.Contains(transform.position))
-            {
-                Vector3 clampedPos = activeSector.sectorBounds.ClosestPoint(transform.position);
+            return;
+        }
 
-                if (agent.enabled)
-                {
-                    agent.Warp(clampedPos);
-                    if (currentObjective != null && agent.isOnNavMesh)
-                    {
-                        agent.SetDestination(GetStrategicDestination(currentObjective));
-                    }
-                }
-                else
-                {
-                    transform.position = clampedPos;
-                }
+        if (agent == null)
+        {
+            agent = GetComponent<NavMeshAgent>();
+        }
+
+        if (agent != null && agent.enabled && agent.isOnNavMesh)
+        {
+            if (NavMesh.SamplePosition(clampedPos, out NavMeshHit hit, 3f, NavMesh.AllAreas) &&
+                BreakthroughFrontlineSystem.IsPositionAllowed(faction, hit.position))
+            {
+                clampedPos = hit.position;
             }
+
+            agent.Warp(clampedPos);
+            if (currentObjective != null && agent.isOnNavMesh)
+            {
+                agent.SetDestination(GetStrategicDestination(currentObjective));
+            }
+        }
+        else
+        {
+            transform.position = clampedPos;
         }
     }
 }

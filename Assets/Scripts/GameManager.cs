@@ -1,5 +1,4 @@
 using UnityEngine;
-using UnityEngine.SceneManagement; 
 using System.IO; 
 using System.Collections;
 using System.Collections.Generic;
@@ -44,7 +43,9 @@ public class GameManager : MonoBehaviour
 
     [Header("Match Settings")]
     public int attackerTickets = 150;
-    public int defenderTickets = 100; 
+    public int defenderTickets = 100;
+    private int startingAttackerTickets = 150;
+    private int startingDefenderTickets = 100; 
     public float sectorTransitionDelay = 12f; 
     public int sectorCaptureTicketBonus = 30; 
     public float sectorHoldRequiredDuration = 1.5f;
@@ -56,6 +57,9 @@ public class GameManager : MonoBehaviour
     public int commandXP = 0;
     public int attackerXP = 0; 
     public int defenderXP = 0;
+    private int startingCommandXP;
+    private int startingAttackerXP;
+    private int startingDefenderXP;
 
     [Header("Spawners")]
     public UnitSpawner attackerSpawner;
@@ -70,7 +74,16 @@ public class GameManager : MonoBehaviour
     public Transform battlefieldParent; 
 
     private bool isGameOver = false;
+    public bool IsMatchOver => isGameOver;
     public bool isTransitioningSector = false;
+
+    public void UseSectors(Sector[] nextSectors)
+    {
+        sectors = nextSectors ?? new Sector[0];
+        currentSectorIndex = 0;
+        isTransitioningSector = false;
+        sectorHoldTimer = 0f;
+    }
 
     void Awake()
     {
@@ -80,6 +93,14 @@ public class GameManager : MonoBehaviour
             return;
         }
         Instance = this;
+        // SampleScene still stores an old 15-ticket test value. One wipe then ends the match
+        // during the first sector. The match pool is the script default of 150.
+        if (attackerTickets < 50) attackerTickets = 150;
+        startingAttackerTickets = attackerTickets;
+        startingDefenderTickets = defenderTickets;
+        startingCommandXP = commandXP;
+        startingAttackerXP = attackerXP;
+        startingDefenderXP = defenderXP;
         
         logFilePath = Application.dataPath + "/MatchBalanceLogs.csv";
 
@@ -110,12 +131,82 @@ public class GameManager : MonoBehaviour
 
     public void StartAutoTestFromMenu()
     {
+        BeginWorkshopTest();
+    }
+
+    public void BeginWorkshopPlay(Faction faction)
+    {
+        enableAutoTestMode = false;
+        if (faction == Faction.None)
+        {
+            faction = UnityEngine.Random.value < 0.5f ? Faction.Attacker : Faction.Defender;
+        }
+
+        if (faction == Faction.Defender) SelectDefenderFaction();
+        else SelectAttackerFaction();
+        Time.timeScale = 1f;
+    }
+
+    public void BeginWorkshopTest()
+    {
         enableAutoTestMode = true;
-        TestDashboardOverlay.ResetBatchStats();
-        TestDashboardOverlay.CurrentMatchNumber = 1;
+        if (MapSession.testRunsFinished == 0)
+        {
+            TestDashboardOverlay.ResetBatchStats();
+            TestDashboardOverlay.CurrentMatchNumber = 1;
+            TestDashboardOverlay.TargetMatchCount = Mathf.Max(1, MapSession.activeTestRuns);
+        }
+
         SelectDefenderFaction();
         matchStartTime = Time.time;
         Time.timeScale = testTimeMultiplier;
+    }
+
+    public void PrepareForRematch()
+    {
+        StopAllCoroutines();
+        isGameOver = false;
+        isTransitioningSector = false;
+        sectorHoldTimer = 0f;
+        currentSectorIndex = 0;
+        attackerTickets = startingAttackerTickets;
+        defenderTickets = startingDefenderTickets;
+        attackerDeaths = 0;
+        defenderDeaths = 0;
+        attackerTotalLifespan = 0f;
+        defenderTotalLifespan = 0f;
+        commandXP = startingCommandXP;
+        attackerXP = startingAttackerXP;
+        defenderXP = startingDefenderXP;
+        playerFaction = Faction.None;
+        enableAutoTestMode = false;
+        Time.timeScale = 1f;
+
+        DestroyTeam("Attacker");
+        DestroyTeam("Defender");
+        ResetAllSectorsCompletely();
+
+        if (attackerSpawner != null) attackerSpawner.PrepareForRematch();
+        if (defenderSpawner != null) defenderSpawner.PrepareForRematch();
+        if (enemyDirector != null) enemyDirector.PrepareForRematch();
+        if (SquadManager.Instance != null) SquadManager.Instance.ClearRostersForRematch();
+        if (SquadAIController.Instance != null) SquadAIController.Instance.ClearForRematch();
+        if (SelectionManager.Instance != null) SelectionManager.Instance.ClearSelection();
+        if (UIManager.Instance != null)
+        {
+            UIManager.Instance.HideGameOver();
+            UIManager.Instance.ClearSectorStatuses();
+            UIManager.Instance.UpdateTickets(attackerTickets);
+        }
+    }
+
+    private void DestroyTeam(string teamTag)
+    {
+        GameObject[] units = GameObject.FindGameObjectsWithTag(teamTag);
+        for (int i = 0; i < units.Length; i++)
+        {
+            if (units[i] != null) Destroy(units[i]);
+        }
     }
 
     void Start()
@@ -142,8 +233,8 @@ public class GameManager : MonoBehaviour
     void Update()
     {
         if (isGameOver || playerFaction == Faction.None) return;
-        CheckWinConditions();
         CheckSectorProgression();
+        CheckWinConditions();
     }
 
     public void SetAutoTestMode(bool isEnabled)
@@ -186,6 +277,7 @@ public class GameManager : MonoBehaviour
 
     private void StartMatch()
     {
+        BreakthroughFrontlineSystem.EnsureInstance();
         if (factionSelectionUI != null) factionSelectionUI.SetActive(false);
         if (playerGameplayUI != null) playerGameplayUI.SetActive(true);
         matchStartTime = Time.time;
@@ -245,13 +337,14 @@ public class GameManager : MonoBehaviour
             }
 
             sectorHoldTimer = 0f;
-            Debug.Log($"🎯 SECTOR COMPLETED: {currentSector.sectorName} ({verifiedCapturedPoints}/{totalPoints} points held at 100% for {sectorHoldRequiredDuration}s).");
+            Debug.Log($"🎯 SECTOR COMPLETED: {currentSector.sectorName} ({verifiedCapturedPoints}/{totalPoints} points held at 100% for {sectorHoldRequiredDuration}s). Sector {currentSectorIndex + 1} of {sectors.Length}.");
 
             CaptureSectorScreenshot(currentSector.sectorName, pointStatusSummary);
 
             int nextSectorIndex = currentSectorIndex + 1;
             if (nextSectorIndex < sectors.Length)
             {
+                AwardSectorCaptureTickets();
                 StartCoroutine(HandleSectorTransition());
             }
             else
@@ -289,15 +382,52 @@ public class GameManager : MonoBehaviour
         }
     }
 
+    private void AwardSectorCaptureTickets()
+    {
+        attackerTickets += sectorCaptureTicketBonus;
+        if (UIManager.Instance != null) UIManager.Instance.UpdateTickets(attackerTickets);
+    }
+
     private IEnumerator HandleSectorTransition()
     {
         isTransitioningSector = true;
+        BreakthroughFrontlineSystem.EnsureInstance();
 
-        if (currentSectorIndex + 1 < sectors.Length && sectors[currentSectorIndex + 1].defenderBase != null)
+        int completedSectorIndex = currentSectorIndex;
+        int nextSectorIndex = completedSectorIndex + 1;
+        if (sectors == null || nextSectorIndex >= sectors.Length)
         {
-            Transform retreatPoint = sectors[currentSectorIndex + 1].defenderBase.spawnPoint;
-            if (retreatPoint == null) retreatPoint = sectors[currentSectorIndex + 1].defenderBase.transform;
-            
+            isTransitioningSector = false;
+            yield break;
+        }
+
+        Sector completedSector = sectors[completedSectorIndex];
+        Sector nextSector = sectors[nextSectorIndex];
+
+        if (completedSector != null && completedSector.capturePoints != null)
+        {
+            foreach (CapturePoint cp in completedSector.capturePoints)
+            {
+                if (cp != null) cp.LockCapturePoint();
+            }
+        }
+
+        if (nextSector != null && nextSector.capturePoints != null)
+        {
+            foreach (CapturePoint cp in nextSector.capturePoints)
+            {
+                if (cp == null) continue;
+                cp.activeDuringSectorIndex = nextSectorIndex;
+                cp.ResetCapturePoint();
+            }
+        }
+
+        if (nextSector != null && nextSector.defenderBase != null)
+        {
+            Transform retreatPoint = nextSector.defenderBase.spawnPoint != null
+                ? nextSector.defenderBase.spawnPoint
+                : nextSector.defenderBase.transform;
+
             GameObject[] defenders = GameObject.FindGameObjectsWithTag("Defender");
             foreach (GameObject def in defenders)
             {
@@ -306,70 +436,152 @@ public class GameManager : MonoBehaviour
             }
         }
 
-        Sector completedSector = sectors[currentSectorIndex];
-        if (completedSector.capturePoints != null)
-        {
-            foreach (CapturePoint cp in completedSector.capturePoints)
-            {
-                if (cp != null) cp.LockCapturePoint(); 
-            }
-        }
+        ReplenishTransitionRosters(completedSectorIndex, nextSectorIndex);
 
         float timer = sectorTransitionDelay;
+        float nextRosterCheck = timer - 1f;
         while (timer > 0f)
         {
             if (UIManager.Instance != null)
             {
-                UIManager.Instance.ShowIntermissionBanner("SECTOR SECURED! DEFENDERS RETREATING", timer);
+                UIManager.Instance.ShowIntermissionBanner("SECTOR SECURED! CLEAR THE SECTOR - FRONTLINE OPENS SOON", timer);
             }
+
+            if (timer <= nextRosterCheck)
+            {
+                ReplenishTransitionRosters(completedSectorIndex, nextSectorIndex);
+                nextRosterCheck -= 1f;
+            }
+
             float step = Mathf.Min(0.2f, timer);
             yield return new WaitForSeconds(step);
             timer -= step;
         }
 
-        currentSectorIndex++;
+        ReplenishTransitionRosters(completedSectorIndex, nextSectorIndex);
+        currentSectorIndex = nextSectorIndex;
 
-        attackerTickets += sectorCaptureTicketBonus;
-        if (UIManager.Instance != null) UIManager.Instance.UpdateTickets(attackerTickets);
-
-        Sector activeSector = sectors[currentSectorIndex];
-        
-        if (activeSector.capturePoints != null)
+        if (attackerSpawner != null && nextSector != null && nextSector.attackerBase != null)
         {
-            foreach (CapturePoint cp in activeSector.capturePoints)
-            {
-                if (cp != null) 
-                {
-                    cp.activeDuringSectorIndex = currentSectorIndex;
-                    cp.ResetCapturePoint();
-                }
-            }
-        }
-
-        if (attackerSpawner != null && activeSector.attackerBase != null)
-        {
-            Transform attSpawn = activeSector.attackerBase.spawnPoint != null ? activeSector.attackerBase.spawnPoint : activeSector.attackerBase.transform;
+            Transform attSpawn = nextSector.attackerBase.spawnPoint != null ? nextSector.attackerBase.spawnPoint : nextSector.attackerBase.transform;
             attackerSpawner.transform.position = attSpawn.position;
         }
-        if (defenderSpawner != null && activeSector.defenderBase != null)
+
+        if (defenderSpawner != null && nextSector != null && nextSector.defenderBase != null)
         {
-            Transform defSpawn = activeSector.defenderBase.spawnPoint != null ? activeSector.defenderBase.spawnPoint : activeSector.defenderBase.transform;
+            Transform defSpawn = nextSector.defenderBase.spawnPoint != null ? nextSector.defenderBase.spawnPoint : nextSector.defenderBase.transform;
             defenderSpawner.transform.position = defSpawn.position;
-            
-            defenderSpawner.SpawnWave(defenderSpawner.initialSpawnCount);
         }
 
-        if (UIManager.Instance != null)
+        if (SquadManager.Instance != null) SquadManager.Instance.ClearStrategicObjectives();
+        if (SquadAIController.Instance != null) SquadAIController.Instance.ClearForRematch();
+
+        isTransitioningSector = false;
+
+        if (UIManager.Instance != null && nextSector != null)
         {
             UIManager.Instance.ClearSectorStatuses();
-            UIManager.Instance.ShowSectorCapturedBanner(activeSector.sectorAnnouncementText);
+            UIManager.Instance.ShowSectorCapturedBanner(nextSector.sectorAnnouncementText);
         }
 
         AutonomousUnit[] allUnits = FindObjectsByType<AutonomousUnit>(FindObjectsInactive.Exclude);
-        foreach (AutonomousUnit unit in allUnits) unit.UpdateDestination();
+        foreach (AutonomousUnit unit in allUnits)
+        {
+            if (unit != null) unit.UpdateDestination();
+        }
+    }
 
-        yield return new WaitForSeconds(1.5f);
-        isTransitioningSector = false;
+    private void ReplenishTransitionRosters(int attackerSpawnSectorIndex, int defenderSpawnSectorIndex)
+    {
+        if (attackerSpawner != null)
+        {
+            attackerSpawner.ReplenishAssaultsForTransition(attackerSpawnSectorIndex, true);
+        }
+
+        if (defenderSpawner != null)
+        {
+            defenderSpawner.ReplenishAssaultsForTransition(defenderSpawnSectorIndex, true);
+        }
+    }
+
+    public bool TryGetAttackerTransitionDestination(GameObject attacker, out Vector3 destination)
+    {
+        destination = attacker != null ? attacker.transform.position : Vector3.zero;
+        if (!isTransitioningSector || attacker == null || sectors == null ||
+            currentSectorIndex < 0 || currentSectorIndex >= sectors.Length)
+        {
+            return false;
+        }
+
+        Sector completedSector = sectors[currentSectorIndex];
+        GameObject nearestDefender = null;
+        float nearestSqrDistance = float.MaxValue;
+
+        GameObject[] defenders = GameObject.FindGameObjectsWithTag("Defender");
+        foreach (GameObject defender in defenders)
+        {
+            if (defender == null) continue;
+
+            if (completedSector != null && completedSector.sectorBounds.size.sqrMagnitude > 0.01f &&
+                !completedSector.sectorBounds.Contains(defender.transform.position))
+            {
+                continue;
+            }
+
+            float sqrDistance = (defender.transform.position - attacker.transform.position).sqrMagnitude;
+            if (sqrDistance < nearestSqrDistance)
+            {
+                nearestSqrDistance = sqrDistance;
+                nearestDefender = defender;
+            }
+        }
+
+        if (nearestDefender != null)
+        {
+            destination = nearestDefender.transform.position;
+            return true;
+        }
+
+        destination = GetTransitionFrontlineHoldPoint(completedSector, attacker.transform.position);
+        return true;
+    }
+
+    private Vector3 GetTransitionFrontlineHoldPoint(Sector completedSector, Vector3 attackerPosition)
+    {
+        if (completedSector == null || completedSector.sectorBounds.size.sqrMagnitude <= 0.01f)
+        {
+            return attackerPosition;
+        }
+
+        Vector3 directionTarget = completedSector.sectorBounds.center;
+        int nextIndex = currentSectorIndex + 1;
+        if (sectors != null && nextIndex >= 0 && nextIndex < sectors.Length)
+        {
+            Sector next = sectors[nextIndex];
+            if (next != null && next.defenderBase != null)
+            {
+                Transform target = next.defenderBase.spawnPoint != null ? next.defenderBase.spawnPoint : next.defenderBase.transform;
+                if (target != null) directionTarget = target.position;
+            }
+            else if (next != null && next.sectorBounds.size.sqrMagnitude > 0.01f)
+            {
+                directionTarget = next.sectorBounds.center;
+            }
+        }
+
+        Vector3 edge = completedSector.sectorBounds.ClosestPoint(directionTarget);
+        Vector3 inward = completedSector.sectorBounds.center - edge;
+        inward.y = 0f;
+        if (inward.sqrMagnitude > 0.01f) edge += inward.normalized * 1.5f;
+
+        int stable = GetStrategicAssignmentId(null) + Mathf.Abs(attackerPosition.GetHashCode());
+        float lateral = ((stable % 7) - 3) * 0.65f;
+        Vector3 forward = directionTarget - completedSector.sectorBounds.center;
+        forward.y = 0f;
+        Vector3 side = forward.sqrMagnitude > 0.01f ? Vector3.Cross(Vector3.up, forward.normalized) : Vector3.right;
+        edge += side * lateral;
+
+        return completedSector.sectorBounds.ClosestPoint(edge);
     }
 
     private void CheckWinConditions()
@@ -380,8 +592,6 @@ public class GameManager : MonoBehaviour
     private void TriggerGameOver(string winner)
     {
         isGameOver = true;
-        
-        if (UIManager.Instance != null) UIManager.Instance.ShowGameOver($"{winner.ToUpper()} WIN!");
 
         if (enableAutoTestMode)
         {
@@ -389,23 +599,37 @@ public class GameManager : MonoBehaviour
             LogMatchData(winner);
             TestDashboardOverlay.RecordMatchCompleted(winner, duration);
 
-            bool shouldContinueBatch = true; 
+            int runLimit = MapSession.activeTestRuns;
+            if (runLimit > 0)
+            {
+                MapSession.testRunsFinished++;
+                if (MapSession.testRunsFinished < runLimit)
+                {
+                    TestDashboardOverlay.CurrentMatchNumber = MapSession.testRunsFinished + 1;
+                    MapSession.continueTest = true;
+                    return;
+                }
 
-            if (shouldContinueBatch)
-            {
-                TestDashboardOverlay.CurrentMatchNumber++;
-                SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
-            }
-            else
-            {
-                Debug.Log($"🏁 BATCH TEST RUN COMPLETED! Total Matches: {TestDashboardOverlay.CurrentMatchNumber}. Final Score: Attackers {TestDashboardOverlay.TotalAttackerWins} - Defenders {TestDashboardOverlay.TotalDefenderWins}");
+                if (UIManager.Instance != null) UIManager.Instance.ShowGameOver($"{winner.ToUpper()} WIN!");
+                Debug.Log($"🏁 BATCH TEST RUN COMPLETED! Total Matches: {MapSession.testRunsFinished}. Final Score: Attackers {TestDashboardOverlay.TotalAttackerWins} - Defenders {TestDashboardOverlay.TotalDefenderWins}");
                 Time.timeScale = 0f;
+                return;
             }
+
+            if (MapSession.returnAfterMatch)
+            {
+                if (UIManager.Instance != null) UIManager.Instance.ShowGameOver($"{winner.ToUpper()} WIN!");
+                Time.timeScale = 0f;
+                return;
+            }
+
+            TestDashboardOverlay.CurrentMatchNumber++;
+            MapSession.continueTest = true;
+            return;
         }
-        else 
-        {
-            Time.timeScale = 0f;
-        }
+
+        if (UIManager.Instance != null) UIManager.Instance.ShowGameOver($"{winner.ToUpper()} WIN!");
+        Time.timeScale = 0f;
     }
 
     private void LogMatchData(string winner)

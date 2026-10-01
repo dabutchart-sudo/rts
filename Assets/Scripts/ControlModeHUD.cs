@@ -30,12 +30,25 @@ public class ControlModeHUD : MonoBehaviour
     {
         EnsureUIInputSystem();
         BuildUI();
+        SetVisible(false);
 
         if (ControlModeManager.Instance != null)
         {
             ControlModeManager.Instance.ModeChanged += HandleModeChanged;
             Refresh(ControlModeManager.Instance.CurrentMode);
         }
+    }
+
+    public void SetVisible(bool visible)
+    {
+        if (visible && autoButton == null)
+        {
+            BuildUI();
+            if (ControlModeManager.Instance != null) Refresh(ControlModeManager.Instance.CurrentMode);
+        }
+
+        if (autoButton == null) return;
+        autoButton.transform.parent.gameObject.SetActive(visible);
     }
 
     private void OnDestroy()
@@ -77,21 +90,10 @@ public class ControlModeHUD : MonoBehaviour
 
     private void BuildUI()
     {
-        Canvas[] canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Include);
-        Canvas gameplayCanvas = null;
-
-        foreach (Canvas canvas in canvases)
-        {
-            if (canvas != null && canvas.gameObject.name == "Canvas_Gameplay")
-            {
-                gameplayCanvas = canvas;
-                break;
-            }
-        }
-
+        Canvas gameplayCanvas = FindMatchCanvas();
         if (gameplayCanvas == null)
         {
-            Debug.LogWarning("ControlModeHUD: Canvas_Gameplay was not found.");
+            Debug.LogWarning("ControlModeHUD: no match canvas was found.");
             return;
         }
 
@@ -216,5 +218,19 @@ public class ControlModeHUD : MonoBehaviour
         {
             text.text = selected ? $"● {label}" : label;
         }
+    }
+
+    private static Canvas FindMatchCanvas()
+    {
+        Canvas[] canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Include);
+        Canvas fallback = null;
+        foreach (Canvas canvas in canvases)
+        {
+            if (canvas == null) continue;
+            if (canvas.gameObject.name == "Canvas_Gameplay") return canvas;
+            if (canvas.gameObject.name == "Canvas") fallback = canvas;
+        }
+
+        return fallback;
     }
 }
