@@ -8,7 +8,7 @@ Before changing gameplay or project structure, read:
 
 1. `DESIGN.md` — intended player experience and design decisions.
 2. `DEVELOPMENT.md` — implementation status, risks, and delivery order.
-3. The relevant GitHub issue — scope and acceptance criteria.
+3. The relevant Linear issue in the Breakthrough RTS project — scope and acceptance criteria.
 
 ## Safety rules
 
@@ -23,14 +23,14 @@ Before changing gameplay or project structure, read:
 
 ## Workflow
 
-1. Confirm the issue and acceptance criteria.
+1. Confirm the Linear issue and acceptance criteria.
 2. Inspect the implementation and relevant serialized assets.
 3. State assumptions when repository evidence is incomplete.
 4. Work in a small, scoped branch unless the user explicitly requests a direct commit.
 5. Keep code changes focused and compatible with Unity 6000.5.7f1.
 6. Preserve existing coding style and public serialized-field compatibility where practical.
 7. Verify before reporting completion.
-8. Update the issue and applicable repository documents.
+8. Update the Linear issue and applicable repository documents.
 
 ## Unity verification
 
@@ -50,16 +50,19 @@ If Unity cannot be run in the current environment, say so clearly and provide a 
 - Update `DESIGN.md` when a gameplay rule or product decision changes.
 - Update `DEVELOPMENT.md` when current capability, risk, milestone order, or immediate work changes.
 - Separate implemented behaviour from planned ideas.
-- Turn new ideas into issues before building them when they materially expand scope.
+- Turn new ideas into Linear issues before building them when they materially expand scope.
 - Prefer completing the vertical slice over adding unvalidated systems.
 
-## GitHub conventions
+## Tracking and GitHub conventions
 
-- One issue should describe one verifiable outcome.
-- Use an epic issue for a milestone and link its child tasks.
+Story tracking lives in Linear. The repository and pull requests stay on GitHub.
+
+- Track epics, tasks, bugs, and experiments as Linear issues in the Breakthrough RTS project (team Dabutchart): https://linear.app/dabutchart/project/breakthrough-rts-b9dab6728624
+- One Linear issue should describe one verifiable outcome.
+- Use a parent Linear issue for a milestone and link its child tasks.
 - Include acceptance criteria in task bodies.
-- Reference issues from pull requests and commits where useful.
-- Do not mark a task complete until the behaviour is verified.
+- Reference the Linear issue from pull requests and commits where useful.
+- Do not mark a Linear issue Done until the behaviour is verified.
 - Keep `main` usable; use feature branches and pull requests for substantive code changes.
 
 ## Communication
