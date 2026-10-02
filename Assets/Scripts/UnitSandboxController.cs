@@ -7,7 +7,8 @@ using UnityEngine.InputSystem;
 /// Runtime control panel for the developer-only unit sandbox.
 /// Spawns the real gameplay prefabs without XP, tickets, sector rules or match setup.
 /// The sandbox deliberately disables autonomous movement so weapon/class behaviour can be
-/// observed repeatedly in a controlled space.
+/// observed repeatedly in a controlled space. The 1 v 1 panel can also place a barricade
+/// and send a duelist into one of its standing spots.
 /// </summary>
 public sealed class UnitSandboxController : MonoBehaviour
 {
@@ -62,6 +63,14 @@ public sealed class UnitSandboxController : MonoBehaviour
     private SandboxUnitChoice duelDefenderChoice = SandboxUnitChoice.Assault;
     private DestructibilityChoice duelAttackerDestructibility = DestructibilityChoice.Destructible;
     private DestructibilityChoice duelDefenderDestructibility = DestructibilityChoice.Destructible;
+    private GameObject duelAttackerUnit;
+    private GameObject duelDefenderUnit;
+    private GameObject duelCover;
+    private string coverStatus = "Place a barricade, then send one side into a gold spot.";
+    private const string CoverPrefabPath = "Assets/Prefabs/Cover_Barricade.prefab";
+
+    [Header("Cover")]
+    public GameObject coverBarricadePrefab;
 
     private GUIStyle titleStyle;
     private GUIStyle sectionStyle;
@@ -130,6 +139,7 @@ public sealed class UnitSandboxController : MonoBehaviour
         GUILayout.Label("Camera: WASD / arrows to pan. Trackpad two-finger scroll or mouse wheel to zoom.", labelStyle);
         GUILayout.EndScrollView();
         GUILayout.EndArea();
+        DrawCoverLabels();
     }
 
     private void DrawDuelPanel()
@@ -152,6 +162,16 @@ public sealed class UnitSandboxController : MonoBehaviour
         GUILayout.Space(10f);
         if (GUILayout.Button("START / RESET 1 v 1", buttonStyle)) StartDuel();
         if (GUILayout.Button("Clear 1 v 1", buttonStyle)) ClearDuel();
+
+        GUILayout.Space(10f);
+        GUILayout.Label("COVER", labelStyle);
+        GUILayout.Label("Gold spots run along both sides. In cover means the other soldier is on the far side of the wall. Exposed means they have gone around the end.", labelStyle);
+        if (GUILayout.Button("Place barricade", buttonStyle)) PlaceDuelCover();
+        if (GUILayout.Button("Defender takes cover", buttonStyle)) SendUnitToCover(true);
+        if (GUILayout.Button("Attacker takes cover", buttonStyle)) SendUnitToCover(false);
+        if (GUILayout.Button("Move attacker to the side", buttonStyle)) MoveAttackerToFlank();
+        if (GUILayout.Button("Return attacker to the front", buttonStyle)) ReturnAttackerToFront();
+        GUILayout.Label(coverStatus, labelStyle);
     }
 
     private SandboxUnitChoice DrawUnitChoice(SandboxUnitChoice current)
@@ -180,16 +200,16 @@ public sealed class UnitSandboxController : MonoBehaviour
 
     private void StartDuel()
     {
-        ClearDuel();
+        ClearDuelUnits();
 
         bool attackerDestructible = duelAttackerDestructibility == DestructibilityChoice.Destructible;
         bool defenderDestructible = duelDefenderDestructibility == DestructibilityChoice.Destructible;
 
-        GameObject attacker = SpawnDuelUnit(duelAttackerChoice, "Attacker", duelAttackerSpawn, attackerDestructible);
-        GameObject defender = SpawnDuelUnit(duelDefenderChoice, "Defender", duelDefenderSpawn, defenderDestructible);
+        duelAttackerUnit = SpawnDuelUnit(duelAttackerChoice, "Attacker", duelAttackerSpawn, attackerDestructible);
+        duelDefenderUnit = SpawnDuelUnit(duelDefenderChoice, "Defender", duelDefenderSpawn, defenderDestructible);
 
-        if (attacker != null) FaceTowards(attacker, duelDefenderSpawn);
-        if (defender != null) FaceTowards(defender, duelAttackerSpawn);
+        if (duelAttackerUnit != null) FaceTowards(duelAttackerUnit, duelDefenderSpawn);
+        if (duelDefenderUnit != null) FaceTowards(duelDefenderUnit, duelAttackerSpawn);
     }
 
     private GameObject SpawnDuelUnit(SandboxUnitChoice choice, string factionTag, Vector3 position, bool destructible)
@@ -424,7 +444,135 @@ public sealed class UnitSandboxController : MonoBehaviour
         }
     }
 
+    private void PlaceDuelCover()
+    {
+        if (duelCover != null) Destroy(duelCover);
+
+        GameObject prefab = coverBarricadePrefab;
+#if UNITY_EDITOR
+        if (prefab == null)
+        {
+            prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(CoverPrefabPath);
+        }
+#endif
+        if (prefab == null)
+        {
+            coverStatus = "The barricade prefab could not be found.";
+            return;
+        }
+
+        Vector3 mid = (duelAttackerSpawn + duelDefenderSpawn) * 0.5f;
+        Vector3 facing = duelAttackerSpawn - duelDefenderSpawn;
+        facing.y = 0f;
+        if (facing.sqrMagnitude < 0.01f) facing = Vector3.left;
+
+        mid.y = 0.25f;
+        duelCover = Instantiate(prefab, mid, Quaternion.LookRotation(facing.normalized, Vector3.up));
+        duelCover.name = "Sandbox_Cover";
+        CoverPiece piece = duelCover.GetComponent<CoverPiece>();
+        if (piece != null)
+        {
+            piece.showSlotMarkers = true;
+            piece.RefreshSlotMarkers();
+        }
+        coverStatus = "Barricade placed between the duelists, facing the attacker.";
+    }
+
+    private void SendUnitToCover(bool defender)
+    {
+        GameObject unit = defender ? duelDefenderUnit : duelAttackerUnit;
+        GameObject threat = defender ? duelAttackerUnit : duelDefenderUnit;
+        if (unit == null || threat == null)
+        {
+            coverStatus = "Start a 1 v 1 first.";
+            return;
+        }
+
+        if (duelCover == null)
+        {
+            coverStatus = "Place a barricade first.";
+            return;
+        }
+
+        if (!CoverUse.TryTakeCover(unit.transform, threat.transform.position, out Vector3 standAt))
+        {
+            coverStatus = defender
+                ? "No free spot on the defender's side of this barricade."
+                : "No free spot on the attacker's side of this barricade.";
+            return;
+        }
+
+        standAt.y = unit.transform.position.y;
+        unit.transform.position = standAt;
+        FaceTowards(unit, threat.transform.position);
+        coverStatus = defender
+            ? "Defender took a spot on the far side. The label should say In cover."
+            : "Attacker took a spot on their own side. The label should say In cover.";
+    }
+
+    private void MoveAttackerToFlank()
+    {
+        if (duelAttackerUnit == null || duelCover == null)
+        {
+            coverStatus = "Place a barricade and start a 1 v 1 first.";
+            return;
+        }
+
+        Vector3 side = duelCover.transform.position + duelCover.transform.right * 8f;
+        side.y = duelAttackerUnit.transform.position.y;
+        duelAttackerUnit.transform.position = side;
+        if (duelDefenderUnit != null) FaceTowards(duelAttackerUnit, duelDefenderUnit.transform.position);
+        coverStatus = "Attacker moved to the side. The defender should now read Exposed.";
+    }
+
+    private void ReturnAttackerToFront()
+    {
+        if (duelAttackerUnit == null)
+        {
+            coverStatus = "Start a 1 v 1 first.";
+            return;
+        }
+
+        Vector3 home = duelAttackerSpawn;
+        home.y = duelAttackerUnit.transform.position.y;
+        duelAttackerUnit.transform.position = home;
+        if (duelDefenderUnit != null) FaceTowards(duelAttackerUnit, duelDefenderUnit.transform.position);
+        coverStatus = "Attacker returned to the front.";
+    }
+
+    private void DrawCoverLabels()
+    {
+        Camera camera = Camera.main;
+        if (camera == null) return;
+
+        DrawStanceLabel(camera, duelAttackerUnit, duelDefenderUnit);
+        DrawStanceLabel(camera, duelDefenderUnit, duelAttackerUnit);
+    }
+
+    private void DrawStanceLabel(Camera camera, GameObject unit, GameObject threat)
+    {
+        if (unit == null) return;
+
+        CoverStance stance = CoverUse.Evaluate(unit.transform, threat != null ? threat.transform : null);
+        string text = stance == CoverStance.InCover ? "In cover" : stance == CoverStance.Blocked ? "Blocked" : "Exposed";
+        Vector3 screen = camera.WorldToScreenPoint(unit.transform.position + Vector3.up * 2.4f);
+        if (screen.z < 0f) return;
+
+        Rect rect = new Rect(screen.x - 42f, Screen.height - screen.y, 84f, 22f);
+        GUI.Box(rect, text);
+    }
+
     private void ClearDuel()
+    {
+        ClearDuelUnits();
+        if (duelCover != null)
+        {
+            Destroy(duelCover);
+            duelCover = null;
+        }
+    }
+
+    private void ClearDuelUnits()
     {
         for (int i = duelObjects.Count - 1; i >= 0; i--)
         {
@@ -432,6 +580,8 @@ public sealed class UnitSandboxController : MonoBehaviour
         }
 
         duelObjects.Clear();
+        duelAttackerUnit = null;
+        duelDefenderUnit = null;
     }
 
     private void ClearFreeSpawned()

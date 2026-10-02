@@ -64,8 +64,12 @@ public void Initialize(Transform target, string enemyTag, float bulletDamage)
         // If the bullet hits a barricade, destroy the bullet immediately
         if (other.CompareTag("Cover"))
         {
-            SpawnImpactEffect();
-            Destroy(gameObject);
+            if (!CoverPiece.ShotPassesOver(other, transform.position.y))
+            {
+                SpawnImpactEffect();
+                Destroy(gameObject);
+            }
+
             return;
         }
 

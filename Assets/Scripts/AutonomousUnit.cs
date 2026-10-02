@@ -12,6 +12,9 @@ public class AutonomousUnit : MonoBehaviour
     private float nextCohesionCheckTime = 0f;
     private Vector3 lastTransitionDestination;
     private float nextTransitionPathRefresh;
+    private float nextCoverRefreshTime;
+    const float CoverRefreshInterval = 0.45f;
+    const float CoverNearObjective = 14f;
 
     [Header("AI Squad Movement")]
     [SerializeField] private float aiSquadSpacing = 2.2f;
@@ -98,6 +101,7 @@ public class AutonomousUnit : MonoBehaviour
                 {
                     currentObjective = target;
                     ApplySquadOrderState(target);
+                    nextCoverRefreshTime = Time.time;
 
                     if (currentObjective != null && agent.enabled && agent.isOnNavMesh)
                     {
@@ -105,8 +109,14 @@ public class AutonomousUnit : MonoBehaviour
                     }
                     else if (currentObjective == null && agent.enabled && agent.isOnNavMesh)
                     {
+                        CoverUse.Release(transform);
                         agent.ResetPath();
                     }
+                }
+                else if (currentObjective != null && Time.time >= nextCoverRefreshTime && agent.enabled && agent.isOnNavMesh)
+                {
+                    nextCoverRefreshTime = Time.time + CoverRefreshInterval;
+                    agent.SetDestination(GetStrategicDestination(currentObjective));
                 }
             }
         }
@@ -114,6 +124,7 @@ public class AutonomousUnit : MonoBehaviour
         {
             currentObjective = null;
             isRegrouping = false;
+            CoverUse.Release(transform);
         }
         else if (hasDirectOrder && agent.enabled && agent.isOnNavMesh && !agent.pathPending && agent.remainingDistance <= agent.stoppingDistance)
         {
@@ -146,6 +157,8 @@ public class AutonomousUnit : MonoBehaviour
         {
             return;
         }
+
+        CoverUse.Release(transform);
 
         if (NavMesh.SamplePosition(desired, out NavMeshHit hit, 3f, NavMesh.AllAreas))
         {
@@ -219,6 +232,7 @@ public class AutonomousUnit : MonoBehaviour
             if (agent.isOnNavMesh) agent.ResetPath();
             currentObjective = null;
             isRegrouping = false;
+            CoverUse.Release(transform);
             return;
         }
 
@@ -262,9 +276,10 @@ public class AutonomousUnit : MonoBehaviour
         Vector3 squadCentre = GetSquadCentre(squadMember.Squad);
         float distanceFromSquad = Vector3.Distance(transform.position, squadCentre);
 
-        if (!isRegrouping && distanceFromSquad > maxSquadSeparation)
+        if (!isRegrouping && distanceFromSquad > maxSquadSeparation && !CoverUse.IsHolding(transform))
         {
             isRegrouping = true;
+            CoverUse.Release(transform);
             MoveTowardRegroupPoint(squadCentre);
             return;
         }
@@ -307,6 +322,7 @@ public class AutonomousUnit : MonoBehaviour
 
         if (retreatPoint != null && agent != null && agent.enabled && agent.isOnNavMesh)
         {
+            CoverUse.Release(transform);
             hasDirectOrder = true;
             isRegrouping = false;
             currentObjective = retreatPoint;
@@ -332,6 +348,7 @@ public class AutonomousUnit : MonoBehaviour
         {
             if (IsPositionWithinActiveBounds(destination))
             {
+                CoverUse.Release(transform);
                 hasDirectOrder = true;
                 isRegrouping = false;
                 currentObjective = null;
@@ -367,6 +384,7 @@ public class AutonomousUnit : MonoBehaviour
         {
             hasDirectOrder = false;
             currentObjective = null;
+            CoverUse.Release(transform);
             if (agent != null && agent.enabled && agent.isOnNavMesh) agent.ResetPath();
         }
     }
@@ -382,41 +400,89 @@ public class AutonomousUnit : MonoBehaviour
 
     private Vector3 GetStrategicDestination(Transform target)
     {
-        if (target == null) return transform.position;
+        if (target == null)
+        {
+            CoverUse.Release(transform);
+            return transform.position;
+        }
 
+        Vector3 desired = target.position;
         SquadMember squadMember = GetComponent<SquadMember>();
-        if (squadMember == null || squadMember.Squad == null || squadMember.Squad.MemberCount <= 1)
+        if (squadMember != null && squadMember.Squad != null && squadMember.Squad.MemberCount > 1)
         {
-            return target.position;
+            int slotIndex = GetSquadSlotIndex(squadMember.Squad);
+            if (slotIndex >= 0)
+            {
+                int memberCount = Mathf.Max(1, squadMember.Squad.MemberCount);
+                int columns = Mathf.CeilToInt(Mathf.Sqrt(memberCount));
+                int rows = Mathf.CeilToInt(memberCount / (float)columns);
+                int row = slotIndex / columns;
+                int column = slotIndex % columns;
+
+                float x = (column - (columns - 1) * 0.5f) * aiSquadSpacing;
+                float z = (row - (rows - 1) * 0.5f) * aiSquadSpacing;
+
+                Vector3 direction = target.position - GetSquadCentre(squadMember.Squad);
+                direction.y = 0f;
+                Quaternion rotation = direction.sqrMagnitude > 0.01f
+                    ? Quaternion.LookRotation(direction.normalized, Vector3.up)
+                    : Quaternion.identity;
+
+                desired = target.position + rotation * new Vector3(x, 0f, z);
+                if (NavMesh.SamplePosition(desired, out NavMeshHit hit, aiNavMeshSampleRadius, NavMesh.AllAreas))
+                {
+                    desired = hit.position;
+                }
+                else
+                {
+                    desired = target.position;
+                }
+            }
         }
 
-        int slotIndex = GetSquadSlotIndex(squadMember.Squad);
-        if (slotIndex < 0) return target.position;
-
-        int memberCount = Mathf.Max(1, squadMember.Squad.MemberCount);
-        int columns = Mathf.CeilToInt(Mathf.Sqrt(memberCount));
-        int rows = Mathf.CeilToInt(memberCount / (float)columns);
-
-        int row = slotIndex / columns;
-        int column = slotIndex % columns;
-
-        float x = (column - (columns - 1) * 0.5f) * aiSquadSpacing;
-        float z = (row - (rows - 1) * 0.5f) * aiSquadSpacing;
-
-        Vector3 direction = target.position - GetSquadCentre(squadMember.Squad);
-        direction.y = 0f;
-        Quaternion rotation = direction.sqrMagnitude > 0.01f
-            ? Quaternion.LookRotation(direction.normalized, Vector3.up)
-            : Quaternion.identity;
-
-        Vector3 desired = target.position + rotation * new Vector3(x, 0f, z);
-
-        if (NavMesh.SamplePosition(desired, out NavMeshHit hit, aiNavMeshSampleRadius, NavMesh.AllAreas))
+        if (isTank || !TryNearestThreat(out Vector3 threatPosition))
         {
-            return hit.position;
+            CoverUse.Release(transform);
+            return desired;
         }
 
-        return target.position;
+        if (CoverUse.TryFindFightingSpot(transform, target.position, threatPosition, CoverNearObjective, out Vector3 coverStand))
+        {
+            if (NavMesh.SamplePosition(coverStand, out NavMeshHit coverHit, 1.25f, NavMesh.AllAreas))
+            {
+                return coverHit.position;
+            }
+
+            return coverStand;
+        }
+
+        return desired;
+    }
+
+    bool TryNearestThreat(out Vector3 threatPosition)
+    {
+        threatPosition = transform.position;
+        Combat combat = GetComponent<Combat>();
+        if (combat == null || string.IsNullOrEmpty(combat.enemyTag)) return false;
+
+        float range = Mathf.Max(1f, combat.attackRange);
+        GameObject[] enemies = GameObject.FindGameObjectsWithTag(combat.enemyTag);
+        float bestDistance = range * range;
+        bool found = false;
+        for (int i = 0; i < enemies.Length; i++)
+        {
+            GameObject enemy = enemies[i];
+            if (enemy == null) continue;
+            Vector3 offset = enemy.transform.position - transform.position;
+            offset.y = 0f;
+            float distance = offset.sqrMagnitude;
+            if (distance > bestDistance) continue;
+            bestDistance = distance;
+            threatPosition = enemy.transform.position;
+            found = true;
+        }
+
+        return found;
     }
 
     private int GetSquadSlotIndex(Squad squad)

@@ -8,7 +8,9 @@ public static class MapRecipeStamper
 {
     public const string GeneratedRootName = "GeneratedMap";
     public const string Chapter1RecipePath = "Assets/Data/MapRecipes/Chapter1Market.asset";
+    public const string AirportMarketRecipePath = "Assets/Data/MapRecipes/Chapter1AirportMarket.asset";
     public const string PreviewScenePath = "Assets/Scenes/Chapter1MarketPreview.unity";
+    public const string AirportMarketPreviewScenePath = "Assets/Scenes/Chapter1AirportMarketPreview.unity";
     public const string SampleScenePath = "Assets/Scenes/SampleScene.unity";
 
     const string PlazaMaterialPath = "Assets/Art/Kenney/CityKitCommercial/Materials/KenneyPlazaPaving.mat";
@@ -19,23 +21,33 @@ public static class MapRecipeStamper
 
     public static void StampChapter1Preview()
     {
-        MapRecipe recipe = AssetDatabase.LoadAssetAtPath<MapRecipe>(Chapter1RecipePath);
+        OpenAndStamp(Chapter1RecipePath, PreviewScenePath);
+    }
+
+    public static void StampAirportMarketPreview()
+    {
+        OpenAndStamp(AirportMarketRecipePath, AirportMarketPreviewScenePath);
+    }
+
+    static void OpenAndStamp(string recipePath, string scenePath)
+    {
+        MapRecipe recipe = AssetDatabase.LoadAssetAtPath<MapRecipe>(recipePath);
         if (recipe == null)
         {
-            Debug.LogError("Could not find the Chapter 1 recipe at " + Chapter1RecipePath);
+            Debug.LogError("Could not find the recipe at " + recipePath);
             return;
         }
 
-        if (AssetDatabase.LoadAssetAtPath<SceneAsset>(PreviewScenePath) == null)
+        if (AssetDatabase.LoadAssetAtPath<SceneAsset>(scenePath) == null)
         {
             if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
             Scene fresh = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
-            EditorSceneManager.SaveScene(fresh, PreviewScenePath);
+            EditorSceneManager.SaveScene(fresh, scenePath);
         }
-        else if (Normalize(SceneManager.GetActiveScene().path) != PreviewScenePath)
+        else if (Normalize(SceneManager.GetActiveScene().path) != scenePath)
         {
             if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
-            EditorSceneManager.OpenScene(PreviewScenePath, OpenSceneMode.Single);
+            EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Single);
         }
 
         StampIntoActiveScene(recipe, false);
@@ -52,14 +64,23 @@ public static class MapRecipeStamper
         Scene scene = SceneManager.GetActiveScene();
         if (protectSampleScene && Normalize(scene.path) == SampleScenePath)
         {
+            bool airportMarket = Normalize(AssetDatabase.GetAssetPath(recipe)) == AirportMarketRecipePath;
             bool openPreview = EditorUtility.DisplayDialog(
                 "SampleScene stays the original map",
-                "This stamp would drop a GeneratedMap into SampleScene. The original map should stay as it is. Open the Chapter 1 Market preview and stamp there instead?",
+                airportMarket
+                    ? "This stamp would drop a GeneratedMap into SampleScene. The original map should stay as it is. Open the Airport and Market preview and stamp there instead?"
+                    : "This stamp would drop a GeneratedMap into SampleScene. The original map should stay as it is. Open the Chapter 1 Market preview and stamp there instead?",
                 "Open the preview",
                 "Cancel");
-            if (openPreview) StampChapter1Preview();
+            if (openPreview)
+            {
+                if (airportMarket) StampAirportMarketPreview();
+                else StampChapter1Preview();
+            }
             return;
         }
+
+        if (colorMaterials != null) colorMaterials.Clear();
 
         Undo.IncrementCurrentGroup();
         int undoGroup = Undo.GetCurrentGroup();
@@ -86,6 +107,7 @@ public static class MapRecipeStamper
                 marker.sectorName = sector.sectorName;
                 marker.flagsPerSector = Mathf.Max(0, sector.flagsPerSector);
                 marker.size = sector.size;
+                CreateSectorPad(sectorObject.transform, sector);
                 sectorObjects.Add(sectorObject);
             }
         }
@@ -120,13 +142,18 @@ public static class MapRecipeStamper
                 districtMarker.kind = district.kind;
                 districtMarker.visualScale = district.visualScale;
 
+                float visualScale = Mathf.Max(0.01f, district.visualScale);
                 if (district.kind == MapDistrictKind.Market)
                 {
-                    BuildMarket(districtObject.transform, Mathf.Max(0.01f, district.visualScale), flags);
+                    BuildMarket(districtObject.transform, visualScale, flags);
+                }
+                else if (district.kind == MapDistrictKind.Airport)
+                {
+                    BuildAirport(districtObject.transform, visualScale, flags);
                 }
                 else
                 {
-                    Debug.LogWarning(district.kind + " is not built yet. Chapter 1.1 only stamps the Market district.");
+                    Debug.LogWarning(district.kind + " is not built by the stamp yet. Farm and Industrial stay sector looks in the map editor.");
                 }
 
                 districtCount++;
@@ -169,6 +196,60 @@ public static class MapRecipeStamper
 
             CreateFlag(flagRoot, slot, visualScale, "CourtyardFlag_" + (i + 1));
         }
+    }
+
+    public static void BuildAirport(Transform parent, float visualScale, int flagCount)
+    {
+        foreach (AirportDistrictLayout.Block block in AirportDistrictLayout.Blocks)
+        {
+            CreatePrimitive(
+                parent,
+                block.objectName,
+                PrimitiveType.Cube,
+                block.localPosition * visualScale,
+                block.size * visualScale,
+                Quaternion.Euler(0f, block.yawDegrees, 0f),
+                ColorMaterial(block.color));
+        }
+
+        Transform flagRoot = new GameObject("CourtyardFlags").transform;
+        Undo.RegisterCreatedObjectUndo(flagRoot.gameObject, "Stamp map recipe");
+        flagRoot.SetParent(parent, false);
+
+        MarketPiece[] slots = AirportDistrictLayout.FlagSlots;
+        for (int i = 0; i < flagCount; i++)
+        {
+            MarketPiece slot = slots.Length > 0 ? slots[Mathf.Min(i, slots.Length - 1)] : default;
+            if (i >= slots.Length && slots.Length > 0)
+            {
+                slot.localPosition += new Vector3(0.6f * (i - slots.Length + 1), 0f, 0f);
+            }
+
+            CreateFlag(flagRoot, slot, visualScale, "CourtyardFlag_" + (i + 1));
+        }
+    }
+
+    static void CreateSectorPad(Transform sectorObject, MapSectorDefinition sector)
+    {
+        Color tint = new Color(0.55f, 0.54f, 0.48f);
+        if (sector.sectorName != null && sector.sectorName.IndexOf("Airport", System.StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            tint = new Color(0.62f, 0.63f, 0.60f);
+        }
+        else if (sector.sectorName != null && sector.sectorName.IndexOf("Market", System.StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            tint = new Color(0.72f, 0.62f, 0.48f);
+        }
+
+        Vector3 size = sector.size;
+        CreatePrimitive(
+            sectorObject,
+            "SectorGround",
+            PrimitiveType.Cube,
+            new Vector3(0f, 0.02f, 0f),
+            new Vector3(Mathf.Max(4f, size.x), 0.04f, Mathf.Max(4f, size.z)),
+            Quaternion.identity,
+            ColorMaterial(tint));
     }
 
     static void CreatePiece(Transform parent, MarketPiece piece, float visualScale, string objectName)
@@ -242,7 +323,7 @@ public static class MapRecipeStamper
 
     static void CreatePreviewGround(Transform parent)
     {
-        CreatePlane(parent, "PreviewGround", new Vector3(0f, -0.02f, 0f), 100f, 100f, LoadMaterial(GroundMaterialPath));
+        CreatePlane(parent, "PreviewGround", new Vector3(0f, -0.02f, 0f), 160f, 160f, LoadMaterial(GroundMaterialPath));
     }
 
     static void CreatePlane(Transform parent, string objectName, Vector3 localPosition, float width, float depth, Material material)
@@ -280,6 +361,23 @@ public static class MapRecipeStamper
         MeshRenderer renderer = target.GetComponent<MeshRenderer>();
         if (renderer != null) renderer.sharedMaterial = material;
     }
+
+    static Material ColorMaterial(Color color)
+    {
+        if (colorMaterials == null) colorMaterials = new Dictionary<Color, Material>();
+        Material existing;
+        if (colorMaterials.TryGetValue(color, out existing) && existing != null) return existing;
+
+        Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+        if (shader == null) shader = Shader.Find("Standard");
+        Material material = new Material(shader);
+        material.color = color;
+        if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
+        colorMaterials[color] = material;
+        return material;
+    }
+
+    static Dictionary<Color, Material> colorMaterials;
 
     static Material LoadMaterial(string path)
     {

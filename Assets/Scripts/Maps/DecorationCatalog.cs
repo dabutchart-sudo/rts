@@ -40,7 +40,23 @@ public static class DecorationCatalog
         new Entry("hay-bale", "Farm", "Hay bale", "", true, 0.7f),
         new Entry("fence", "Farm", "Fence", "", true, 1.2f),
         new Entry("barn", "Farm", "Barn", "", false, 1.8f),
-        new Entry("silo", "Farm", "Silo", "", false, 1f)
+        new Entry("silo", "Farm", "Silo", "", false, 1f),
+        new Entry("hard-standing", "Industrial", "Hard standing", "", true, 1.55f),
+        new Entry("container", "Industrial", "Container", "", true, 1.4f),
+        new Entry("container-b", "Industrial", "Container B", "", true, 1.4f),
+        new Entry("pallet", "Industrial", "Pallet", "", true, 0.75f),
+        new Entry("warehouse", "Industrial", "Warehouse", "", false, 1.9f),
+        new Entry("apron", "Airport", "Apron", "", true, 1.55f),
+        new Entry("runway", "Airport", "Runway", "", true, 2f),
+        new Entry("plane", "Airport", "Plane", "", true, 1.5f),
+        new Entry("crate", "Airport", "Crate", "", true, 0.65f),
+        new Entry("barrier", "Airport", "Barrier", "", true, 1.2f),
+        new Entry("light-mast", "Airport", "Light", "", true, 0.5f),
+        new Entry("fuel-tank", "Airport", "Fuel tank", "", true, 1.15f),
+        new Entry("hangar", "Airport", "Hangar", "", false, 1.9f),
+        new Entry("tower", "Airport", "Control tower", "", false, 0.9f),
+        new Entry("terminal", "Airport", "Terminal", "", false, 2.1f),
+        new Entry("barricade", "Cover", "Barricade", "", false, 1.2f)
     };
 
     public static Entry Find(string id)
@@ -62,7 +78,10 @@ public static class DecorationCatalog
 
     public static string GroupName(MapDistrictKind kind)
     {
-        return kind == MapDistrictKind.Farm ? "Farm" : "Market";
+        if (kind == MapDistrictKind.Farm) return "Farm";
+        if (kind == MapDistrictKind.Industrial) return "Industrial";
+        if (kind == MapDistrictKind.Airport) return "Airport";
+        return "Market";
     }
 
     public static Entry[] AutoDressEntries(string groupName)

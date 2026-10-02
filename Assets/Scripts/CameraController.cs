@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.EnhancedTouch;
 
@@ -79,6 +80,7 @@ public class RTSCamera : MonoBehaviour
     void HandleTrackpadPan()
     {
         if (Mouse.current == null) return;
+        if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject(Mouse.current.deviceId)) return;
 
         // Unity reads Mac trackpad two-finger gestures as scroll deltas
         Vector2 scrollDelta = Mouse.current.scroll.ReadValue();
@@ -129,6 +131,34 @@ public class RTSCamera : MonoBehaviour
                 ApplyZoom(pinchDelta * mobilePinchZoomSpeed);
             }
         }
+    }
+
+    public float NormalizedZoom
+    {
+        get
+        {
+            float span = maxZoomHeight - minZoomHeight;
+            if (span <= 0.01f) return 1f;
+            return Mathf.Clamp01((maxZoomHeight - transform.position.y) / span);
+        }
+    }
+
+    public void SetNormalizedZoom(float zoom)
+    {
+        float targetHeight = Mathf.Lerp(maxZoomHeight, minZoomHeight, Mathf.Clamp01(zoom));
+        float forwardY = transform.forward.y;
+        if (Mathf.Abs(forwardY) < 0.05f)
+        {
+            Vector3 flat = transform.position;
+            flat.y = Mathf.Clamp(targetHeight, minZoomHeight, maxZoomHeight);
+            transform.position = flat;
+            return;
+        }
+
+        float zoomAmount = (targetHeight - transform.position.y) / forwardY;
+        Vector3 next = transform.position + (transform.forward * zoomAmount);
+        next.y = Mathf.Clamp(next.y, minZoomHeight, maxZoomHeight);
+        transform.position = next;
     }
 
     void ApplyZoom(float zoomAmount)

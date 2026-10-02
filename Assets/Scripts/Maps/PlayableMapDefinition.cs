@@ -353,6 +353,14 @@ public class PlayableMapDefinition
         piece.kept = true;
     }
 
+    public void RotateDecoration(string pieceId, float deltaDegrees)
+    {
+        PlayableDecorationPiece piece = FindDecoration(pieceId);
+        if (piece == null) return;
+        piece.yaw = Mathf.Repeat(piece.yaw + deltaDegrees, 360f);
+        piece.kept = true;
+    }
+
     public void RemoveDecoration(string pieceId)
     {
         PlayableDecorationPiece piece = FindDecoration(pieceId);
@@ -486,6 +494,11 @@ public class PlayableMapDefinition
 
             int room = decorationDensity - already;
             if (room <= 0) return;
+            if (sector.dressing == MapDistrictKind.Industrial)
+            {
+                AddIndustrialYard(sectorIndex, room);
+                return;
+            }
 
             float inset = 4.5f;
             float step = 4.8f;
@@ -508,38 +521,177 @@ public class PlayableMapDefinition
             }
 
             int placed = 0;
-            bool placeBarn = sector.dressing == MapDistrictKind.Farm && !SectorHasCatalog(sectorIndex, "barn");
+            string landmarkId = MissingLandmarkId(sector.dressing, sectorIndex);
             for (int i = 0; i < spots.Count && placed < room; i++)
             {
                 if (!DecorationSpotIsClear(sectorIndex, spots[i])) continue;
-                string catalogId = placeBarn ? "barn" : catalog[random.Next(catalog.Length)].id;
-                placeBarn = false;
+                bool placingLandmark = !string.IsNullOrEmpty(landmarkId);
+                string catalogId = placingLandmark ? landmarkId : catalog[random.Next(catalog.Length)].id;
+                landmarkId = null;
                 decoration.Add(new PlayableDecorationPiece
                 {
                     pieceId = NextDecorationId(sectorIndex, placed),
                     sectorIndex = sectorIndex,
                     catalogId = catalogId,
                     position = spots[i],
-                    yaw = random.Next(0, 8) * 45f,
+                    yaw = DressingYaw(sector.dressing, random, placingLandmark),
                     kept = false
                 });
                 placed++;
             }
     }
 
-    public bool EnsureFarmLandmarks()
+    void AddIndustrialYard(int sectorIndex, int room)
+    {
+        PlayableSectorDefinition sector = sectors[sectorIndex];
+        float roadX = (minX + maxX) * 0.5f;
+        float inner = (SpineRoadWidth * 0.5f) + 1.8f;
+        int placed = 0;
+        int[] sides = { -1, 1 };
+        var lanes = new IndustrialLanes[2];
+        for (int s = 0; s < sides.Length; s++)
+        {
+            lanes[s] = IndustrialLanes.ForSide(sides[s], minX, maxX, roadX, inner);
+        }
+
+        for (int s = 0; s < lanes.Length && placed < room; s++)
+        {
+            if (!lanes[s].fits) continue;
+            float yaw = lanes[s].sign < 0 ? 90f : 270f;
+            float z = IndustrialAnchorZ(sectorIndex, lanes[s].buildingX, sector);
+            if (z < sector.minZ) continue;
+            if (TryAddDecoration(sectorIndex, "warehouse", new Vector3(lanes[s].buildingX, 0f, z), yaw, 2.5f))
+            {
+                lanes[s].anchorZ = z;
+                lanes[s].hasBuilding = true;
+                placed++;
+            }
+        }
+
+        for (int s = 0; s < lanes.Length && placed < room; s++)
+        {
+            if (!lanes[s].hasBuilding) continue;
+            float yaw = lanes[s].sign < 0 ? 90f : 270f;
+            float doorX = lanes[s].buildingX - (lanes[s].sign * 2.7f);
+            if (TryAddDecoration(sectorIndex, "pallet", new Vector3(doorX, 0f, lanes[s].anchorZ), yaw, 2.5f))
+            {
+                placed++;
+            }
+        }
+
+        int bay = 0;
+        for (float z = sector.minZ + 6.5f; z <= sector.maxZ - 6.5f && placed < room; z += 5.4f)
+        {
+            string containerId = bay % 2 == 0 ? "container" : "container-b";
+            bay++;
+            for (int s = 0; s < lanes.Length && placed < room; s++)
+            {
+                if (!lanes[s].fits) continue;
+                float yaw = lanes[s].sign < 0 ? 90f : 270f;
+                if (TryAddDecoration(sectorIndex, containerId, new Vector3(lanes[s].containerX, 0f, z), yaw, 2.5f))
+                {
+                    placed++;
+                }
+
+                if (placed >= room) return;
+                if (TryAddDecoration(sectorIndex, "hard-standing", new Vector3(lanes[s].padX, 0f, z + 2.6f), 0f, 2.5f))
+                {
+                    placed++;
+                }
+            }
+        }
+    }
+
+    float IndustrialAnchorZ(int sectorIndex, float x, PlayableSectorDefinition sector)
+    {
+        float mid = (sector.minZ + sector.maxZ) * 0.5f;
+        for (int step = 0; step <= 6; step++)
+        {
+            float offset = ((step + 1) / 2) * 4.5f * (step % 2 == 0 ? 1f : -1f);
+            if (step == 0) offset = 0f;
+            float z = mid + offset;
+            if (z < sector.minZ + 6f || z > sector.maxZ - 6f) continue;
+            if (DecorationSpotIsClear(sectorIndex, new Vector3(x, 0f, z), 2.5f)) return z;
+        }
+
+        return sector.minZ - 1f;
+    }
+
+    bool TryAddDecoration(int sectorIndex, string catalogId, Vector3 spot, float yaw, float pieceGap)
+    {
+        if (!DecorationSpotIsClear(sectorIndex, spot, pieceGap)) return false;
+        decoration.Add(new PlayableDecorationPiece
+        {
+            pieceId = NextDecorationId(sectorIndex, decoration.Count),
+            sectorIndex = sectorIndex,
+            catalogId = catalogId,
+            position = spot,
+            yaw = yaw,
+            kept = false
+        });
+        return true;
+    }
+
+    struct IndustrialLanes
+    {
+        public int sign;
+        public bool fits;
+        public bool hasBuilding;
+        public float buildingX;
+        public float containerX;
+        public float padX;
+        public float anchorZ;
+
+        public static IndustrialLanes ForSide(int sign, float minX, float maxX, float roadX, float inner)
+        {
+            float outerEdge = sign < 0 ? minX + 2.5f : maxX - 2.5f;
+            float innerEdge = roadX + (sign * inner);
+            var lanes = new IndustrialLanes { sign = sign };
+            if (Mathf.Abs(innerEdge - outerEdge) < 7f) return lanes;
+            lanes.fits = true;
+            lanes.buildingX = Mathf.Lerp(outerEdge, innerEdge, 0.22f);
+            lanes.containerX = Mathf.Lerp(outerEdge, innerEdge, 0.58f);
+            lanes.padX = Mathf.Lerp(outerEdge, innerEdge, 0.82f);
+            return lanes;
+        }
+    }
+
+    public bool EnsureDistrictLandmarks()
     {
         Normalize();
         bool added = false;
         for (int sectorIndex = 0; sectorIndex < sectors.Count; sectorIndex++)
         {
             PlayableSectorDefinition sector = sectors[sectorIndex];
-            if (sector == null || sector.dressing != MapDistrictKind.Farm) continue;
-            if (SectorHasCatalog(sectorIndex, "barn")) continue;
-            if (TryPlaceCatalogInSector(sectorIndex, "barn")) added = true;
+            if (sector == null) continue;
+            string landmarkId = LandmarkCatalogId(sector.dressing);
+            if (string.IsNullOrEmpty(landmarkId) || SectorHasCatalog(sectorIndex, landmarkId)) continue;
+            if (TryPlaceCatalogInSector(sectorIndex, landmarkId)) added = true;
         }
 
         return added;
+    }
+
+    static string LandmarkCatalogId(MapDistrictKind dressing)
+    {
+        if (dressing == MapDistrictKind.Farm) return "barn";
+        if (dressing == MapDistrictKind.Industrial) return "warehouse";
+        if (dressing == MapDistrictKind.Airport) return "hangar";
+        return null;
+    }
+
+    string MissingLandmarkId(MapDistrictKind dressing, int sectorIndex)
+    {
+        string landmarkId = LandmarkCatalogId(dressing);
+        if (string.IsNullOrEmpty(landmarkId) || SectorHasCatalog(sectorIndex, landmarkId)) return null;
+        return landmarkId;
+    }
+
+    static float DressingYaw(MapDistrictKind dressing, System.Random random, bool landmark)
+    {
+        if (landmark) return 0f;
+        if (dressing == MapDistrictKind.Airport || dressing == MapDistrictKind.Industrial) return random.Next(0, 4) * 90f;
+        return random.Next(0, 8) * 45f;
     }
 
     bool SectorHasCatalog(int sectorIndex, string catalogId)
@@ -596,6 +748,11 @@ public class PlayableMapDefinition
 
     bool DecorationSpotIsClear(int sectorIndex, Vector3 spot)
     {
+        return DecorationSpotIsClear(sectorIndex, spot, 4.6f);
+    }
+
+    bool DecorationSpotIsClear(int sectorIndex, Vector3 spot, float pieceGap)
+    {
         PlayableSectorDefinition sector = sectors[sectorIndex];
         if (Vector3.Distance(Flat(spot), Flat(sector.attackerSpawn)) < 9f) return false;
         if (Vector3.Distance(Flat(spot), Flat(sector.defenderSpawn)) < 9f) return false;
@@ -623,12 +780,12 @@ public class PlayableMapDefinition
 
         for (int i = 0; i < decoration.Count; i++)
         {
-            if (decoration[i] != null && Vector3.Distance(Flat(spot), Flat(decoration[i].position)) < 4.6f) return false;
+            if (decoration[i] != null && Vector3.Distance(Flat(spot), Flat(decoration[i].position)) < pieceGap) return false;
         }
 
         for (int i = 0; i < decorationBlocks.Count; i++)
         {
-            if (Vector3.Distance(Flat(spot), Flat(decorationBlocks[i])) < 4.6f) return false;
+            if (Vector3.Distance(Flat(spot), Flat(decorationBlocks[i])) < pieceGap) return false;
         }
 
         return true;

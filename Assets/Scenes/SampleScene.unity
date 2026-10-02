@@ -806,7 +806,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8016238160098693759, guid: 0a6810e6a61cc4527a41343b8d710f7c, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 0.74999994
+      value: 0.25
       objectReference: {fileID: 0}
     - target: {fileID: 8016238160098693759, guid: 0a6810e6a61cc4527a41343b8d710f7c, type: 3}
       propertyPath: m_LocalPosition.z
@@ -863,7 +863,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8016238160098693759, guid: 0a6810e6a61cc4527a41343b8d710f7c, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 0.75000197
+      value: 0.25
       objectReference: {fileID: 0}
     - target: {fileID: 8016238160098693759, guid: 0a6810e6a61cc4527a41343b8d710f7c, type: 3}
       propertyPath: m_LocalPosition.z
@@ -1575,7 +1575,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8016238160098693759, guid: 0a6810e6a61cc4527a41343b8d710f7c, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 0.7499992
+      value: 0.25
       objectReference: {fileID: 0}
     - target: {fileID: 8016238160098693759, guid: 0a6810e6a61cc4527a41343b8d710f7c, type: 3}
       propertyPath: m_LocalPosition.z
@@ -1920,7 +1920,7 @@ MonoBehaviour:
   sectorA: {fileID: 2080166751}
   sectorB: {fileID: 2011251541}
   currentStage: 1
-  defenderSpawner: {fileID: 503041645}
+  defenderSpawner: {fileID: 503041646}
   defenderSpawnDistanceBehindSector: 15
   attackerTickets: 150
   bonusTicketsOnSectorCapture: 15
