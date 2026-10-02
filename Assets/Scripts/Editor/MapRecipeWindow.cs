@@ -35,6 +35,12 @@ public class MapRecipeWindow : EditorWindow
         MapRecipeStamper.StampChapter1Preview();
     }
 
+    [MenuItem("RTS/Maps/Stamp Airport then Market", false, 3)]
+    public static void StampAirportThenMarket()
+    {
+        MapRecipeStamper.StampAirportMarketPreview();
+    }
+
     void OnEnable()
     {
         if (recipe == null)
@@ -90,7 +96,8 @@ public class MapRecipeWindow : EditorWindow
                 foreach (MapDistrictDefinition district in recipe.districts)
                 {
                     if (district == null) continue;
-                    string ready = district.kind == MapDistrictKind.Market ? "ready to stamp" : "saved on the recipe, not built yet";
+                    bool readyToStamp = district.kind == MapDistrictKind.Market || district.kind == MapDistrictKind.Airport;
+                    string ready = readyToStamp ? "ready to stamp" : "saved on the recipe, not built yet";
                     EditorGUILayout.LabelField(district.districtName + " (" + district.kind + ")", ready + ", scale " + district.visualScale);
                 }
             }
@@ -110,8 +117,13 @@ public class MapRecipeWindow : EditorWindow
             MapRecipeStamper.StampChapter1Preview();
         }
 
+        if (GUILayout.Button("Stamp Airport then Market"))
+        {
+            MapRecipeStamper.StampAirportMarketPreview();
+        }
+
         EditorGUILayout.HelpBox(
-            "Chapter 1.1 builds the Market only: plaza, orange shop blocks, stall canopies, parasols, a small kiosk, and courtyard flags. Farm, Industrial, and Airport are sector looks in the map editor, not this stamp.",
+            "The Market stamp is the plaza, orange shops, stalls, and courtyard flags. Airport then Market places those two districts in Breakthrough order, Airport first, with courtyard flags in both. Farm and Industrial stay sector looks in the map editor.",
             MessageType.None);
     }
 }

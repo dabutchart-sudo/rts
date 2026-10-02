@@ -64,7 +64,7 @@ The repository contains a playable prototype, but it has not yet passed a docume
 
 ## Roadmap
 
-The first slice of **Map Generation Phase 2** now includes a verge, roads, Market dressing, a simple Farm look per sector, a simple right-angled Industrial yard per sector, a simple right-angled Airport look per sector, a population slider, and a palette. The industrial yard still needs a look check. Freer road shapes come later. The milestones below stay after that. A zoom slider sits in the bottom-right of the match screen.
+The first slice of **Map Generation Phase 2** now includes a verge, roads, Market dressing, a simple Farm look per sector, a simple right-angled Industrial yard per sector, a simple right-angled Airport look per sector, a population slider, and a palette. The industrial yard was accepted on 1 Oct 2026. Freer road shapes come later. The milestones below stay after that. A zoom slider sits in the bottom-right of the match screen.
 
 ### M1 — Stabilise the Breakthrough loop
 
@@ -105,6 +105,18 @@ The preview is not on `main`. Unity only shows it after the project is on branch
 
 The recipe asset is `Assets/Data/MapRecipes/Chapter1Market.asset`. Change sectors, flag counts, or `visualScale` there, then stamp again.
 
+## Looking at Airport then Market
+
+This is a look check, not a match. It does not change SampleScene.
+
+1. In Unity's menu bar, choose **RTS → Maps → Stamp Airport then Market**.
+2. Unity opens `Assets/Scenes/Chapter1AirportMarketPreview.unity`, creating it the first time, and builds `GeneratedMap`.
+3. You should see two districts along the strip. The near one, toward the attacker side, is the Airport: a hangar, a runway, two planes, a tower, and two flags standing on the open apron. Further along is the Market you already know, with its own two flags in the plaza.
+4. Press Play to look around. WASD or the arrow keys slide the camera. Q and E, or the scroll wheel, zoom. No match starts.
+5. Stamping the Market preview again does not remove this scene. It rebuilds the single Market in its own preview scene.
+
+The recipe asset is `Assets/Data/MapRecipes/Chapter1AirportMarket.asset`.
+
 ## Making a blank map
 
 1. Press Play on `SampleScene` in Unity 6000.5.7f1. The opening menu is a stack of rows on a black screen: **Play**, **Test**, **Edit**, **ChatGPT Map**, and **Unit Sandbox**. A match does not start on its own. ChatGPT Map is the greybox battlefield. Unit Sandbox is for trying units. **Main menu** stays at the bottom-left on every screen after this one, including a match, and on those two scenes.
@@ -126,11 +138,12 @@ Temporary. This does not change the match, and it is not a decision about the ar
 
 1. A played match on a workshop map has reached a result. Confirmed 22 Sep 2026. Original, both results, and Auto, Assist, and Manual were accepted the same day.
 2. The opening menu and the Market dressing, including the population slider, were accepted on 23 Sep 2026.
-3. The verge, centre road, crossings, and extra straight roads were accepted on 23 Sep 2026. Each sector can now be dressed as a market, a simple farm, a simple right-angled industrial yard, or a simple right-angled airport. The industrial yard still needs a look check. Freer road shapes stay later.
+3. The verge, centre road, crossings, and extra straight roads were accepted on 23 Sep 2026. Each sector can now be dressed as a market, a simple farm, a simple right-angled industrial yard, or a simple right-angled airport. The industrial yard was accepted on 1 Oct 2026. Freer road shapes stay later.
 4. The zoom slider was accepted on 28 Sep 2026. The airport look was accepted the same day. The editor list's gold scrollbar still needs a play check.
 5. Waist-high cover, including a barricade placed in the editor, was accepted on 28 Sep 2026. Infantry take a nearby spot while an enemy is in range of the point they are fighting, and leave it when flanked or ordered away.
 6. The bottom-left Main menu button, and turning a selected piece 45 degrees either way, were accepted on 28 Sep 2026.
 7. A temporary soldier look test is in `Assets/Scenes/SoldierLookDev.unity`. It is not part of the match and it is not a chosen art style. Five uniformed soldiers walk a loop. The gold label, Rifleman, is the detailed one. A red capsule beside the loop is today's match unit, for comparison.
+8. The Airport-then-Market stamp was accepted on 1 Oct 2026. It is a look check, not a match. Use **RTS → Maps → Stamp Airport then Market**.
 
 ## Definition of done
 
